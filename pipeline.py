@@ -18,7 +18,14 @@ if __name__ == "__main__":
     parser.add_argument("--config", default="configs/optimal_config.yaml", help="Path to config file")
     parser.add_argument("--out", default=None, help="Output submission CSV path")
     parser.add_argument("--sample", type=int, default=None, help="Sample frame count for quick testing")
-    parser.add_argument("--window", type=int, default=100, help="Smoothing window half-width in frames")
+    parser.add_argument("--window", type=int, default=None, help="Smoothing window half-width in frames")
+    parser.add_argument("--min-spell", type=int, default=None, help="Minimum spell pruning length in frames")
     args = parser.parse_args()
 
-    run_pipeline(config_path=args.config, out_path=args.out, sample_frames=args.sample, window=args.window)
+    run_pipeline(
+        config_path=args.config,
+        out_path=args.out,
+        sample_frames=args.sample,
+        window=args.window,
+        min_spell=args.min_spell
+    )

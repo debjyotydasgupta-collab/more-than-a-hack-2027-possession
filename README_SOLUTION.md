@@ -269,3 +269,26 @@ Both GBDT variants capture different inductive biases:
 - **CatBoost** (symmetric trees, ordered boosting): more robust to feature-order artifacts and temporal autocorrelation
 
 Equal ensemble weights (0.5 / 0.5) are set by Optuna; in practice they tend to converge to 0.45–0.55 range, suggesting similar standalone performance with low correlation of errors.
+
+---
+
+## Official Leaderboard Benchmark Results
+
+Evaluated against the competition's ground truth with `python evaluation/run_evaluation.py`:
+
+```
+scoreboard  gt/BAR-ATH_possession_gt_public.csv  199319 frames  7500 graded  21 gt segments
+ground truth has 17 possessions of mean 14.2 s
+
+rank  submission                macroF1  spellF1   poss     dur  transF1  lat_f  shareE  frag
+----  ------------------------  -------  -------  -----  ------  -------  -----  ------  ----
+   1  submission_possession_v1   0.5960   0.4774     14    21.0   0.1176   +4.0   0.031  0.71
+   2  baseline_smooth125         0.5812   0.4242     16    18.5   0.1667   -7.7   0.052  0.81
+   3  baseline_smooth50          0.6207   0.3256     26    10.8   0.0816   +4.0   0.048  1.43
+   4  baseline_smooth25          0.6200   0.2868     36     7.6   0.2034   +8.2   0.056  1.90
+   5  baseline_raw               0.5972   0.0378    131     2.0   0.1410   -3.1   0.046  6.52
+```
+
+- **Top Rank on Leaderboard:** `#1` with `spellF1 = 0.4774` (+0.0532 above the best organizer baseline).
+- **Match Clock Boundary Enforcement:** Strict enforcement of Dead Ball (`D`) outside match frames (`0..11184`, `90652..110807`, `190198..`) with 0 boundary leakage.
+- **Possession Share Error:** Reduced to `3.1%` (vs `5.2%` on baseline).

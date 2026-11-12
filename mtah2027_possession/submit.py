@@ -28,9 +28,19 @@ def main():
                         help="Output path for submission CSV")
     parser.add_argument("--sample", type=int, default=None,
                         help="Test on subset of frames (e.g. 5000)")
+    parser.add_argument("--window", type=int, default=None,
+                        help="Smoothing window half-width in frames")
+    parser.add_argument("--min-spell", type=int, default=None,
+                        help="Minimum spell pruning length in frames")
     args = parser.parse_args()
 
-    success = run_pipeline(config_path=args.config, out_path=args.out, sample_frames=args.sample)
+    success = run_pipeline(
+        config_path=args.config,
+        out_path=args.out,
+        sample_frames=args.sample,
+        window=args.window,
+        min_spell=args.min_spell
+    )
     if not success:
         print("Submission generation failed.")
         sys.exit(1)

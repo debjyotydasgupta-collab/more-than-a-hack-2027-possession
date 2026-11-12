@@ -2,6 +2,10 @@
 # FC Barcelona Hackathon "More Than A Hack 2027" - Ball Possession Tracking
 # Last tuned: Optuna TPE, 150 trials, 4-hour budget
 
+pipeline:
+  window: 115
+  min_spell_frames: 15
+
 kalman:
   q_process_noise: 0.005
   r_measurement_noise: 0.5

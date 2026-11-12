@@ -42,12 +42,17 @@ def load_config(config_path):
         return yaml.safe_load(f) or {}
 
 
-def run_pipeline(config_path="configs/optimal_config.yaml", out_path=None, sample_frames=None, window=75):
+def run_pipeline(config_path="configs/optimal_config.yaml", out_path=None, sample_frames=None, window=None, min_spell=None):
     print("=" * 70)
     print(" FC BARCELONA 'MORE THAN A HACK 2027' — BALL POSSESSION ENGINE")
     print("=" * 70)
 
     cfg = load_config(config_path)
+    pipe_cfg = cfg.get("pipeline", {})
+    if window is None:
+        window = pipe_cfg.get("window", 115)
+    if min_spell is None:
+        min_spell = pipe_cfg.get("min_spell_frames", 15)
     total_frames = GAMES[GAME]["n_video_frames"] if sample_frames is None else sample_frames
     pitch = GAMES[GAME]["pitch"]
     length, width = pitch
@@ -111,34 +116,8 @@ def run_pipeline(config_path="configs/optimal_config.yaml", out_path=None, sampl
     out_of_pitch = (bx < -0.5) | (bx > length + 0.5) | (by < -0.5) | (by > width + 0.5)
     codes[out_of_pitch] = NOBODY
 
-    # 4. Integrate Smart Tagging Set Pieces & Halftime Rules
-    print("\n[4/6] Imposing tactical Smart Tagging and match clock boundaries...")
-    # First 75% of Set Pieces is Dead Ball (D)
-    for ev in events:
-        c = (ev["code"] or "").strip().upper()
-        sf = ev["start_frame"]
-        ef = min(total_frames, ev["end_frame"])
-        if sf >= total_frames:
-            continue
-        dur = ef - sf
-        if dur <= 0:
-            continue
-
-        if c == "SET PIECES":
-            dead_cut = sf + int(0.75 * dur)
-            codes[sf:dead_cut] = NOBODY
-        elif c == "GOALS":
-            codes[sf:ef] = NOBODY
-
-    # Pre-kickoff, Halftime, and Post-match are strictly Dead Ball (D)
-    codes[:min(total_frames, 11185)] = NOBODY
-    if total_frames > 90652:
-        codes[90652:min(total_frames, 110808)] = NOBODY
-    if total_frames > 190198:
-        codes[190198:] = NOBODY
-
-    # 5. Temporal Stabilization & Majority Voting Window
-    print(f"\n[5/6] Running temporal stabilization window (+/- {window} frames)...")
+    # 4. Running temporal stabilization window
+    print(f"\n[4/6] Running temporal stabilization window (+/- {window} frames)...")
     home_cum = np.concatenate(([0], np.cumsum(codes == HOME)))
     away_cum = np.concatenate(([0], np.cumsum(codes == AWAY)))
 
@@ -152,10 +131,18 @@ def run_pipeline(config_path="configs/optimal_config.yaml", out_path=None, sampl
     seen = (home_votes + away_votes) > 0
     labels[seen] = np.where(home_votes[seen] >= away_votes[seen], "H", "A")
 
-    # 6. Minimum Spell Pruning (Remove spurious flickers < 15 frames)
-    print("\n[6/6] Applying minimum possession spell pruning (min_spell=15 frames)...")
-    pruner = PruneShortSpells(min_spell_frames=15)
+    # 5. Minimum Spell Pruning (Remove spurious flickers < min_spell frames)
+    print(f"\n[5/6] Applying minimum possession spell pruning (min_spell={min_spell} frames)...")
+    pruner = PruneShortSpells(min_spell_frames=min_spell)
     final_labels = pruner.prune_short_spells(labels)
+
+    # 6. Strictly enforce Match Clock Boundaries (Pre-kickoff, Halftime, Post-match)
+    print("\n[6/6] Imposing deterministic match clock boundaries...")
+    final_labels[:min(total_frames, 11185)] = "D"
+    if total_frames > 90652:
+        final_labels[90652:min(total_frames, 110808)] = "D"
+    if total_frames > 190198:
+        final_labels[190198:] = "D"
 
     # Save output submission
     if out_path is None:
@@ -184,7 +171,14 @@ if __name__ == "__main__":
     parser.add_argument("--config", default="configs/optimal_config.yaml", help="Path to config file")
     parser.add_argument("--out", default=None, help="Output submission CSV path")
     parser.add_argument("--sample", type=int, default=None, help="Sample frame count for quick testing")
-    parser.add_argument("--window", type=int, default=75, help="Smoothing window half-width in frames")
+    parser.add_argument("--window", type=int, default=None, help="Smoothing window half-width in frames")
+    parser.add_argument("--min-spell", type=int, default=None, help="Minimum spell pruning length in frames")
     args = parser.parse_args()
 
-    run_pipeline(config_path=args.config, out_path=args.out, sample_frames=args.sample, window=args.window)
+    run_pipeline(
+        config_path=args.config,
+        out_path=args.out,
+        sample_frames=args.sample,
+        window=args.window,
+        min_spell=args.min_spell
+    )

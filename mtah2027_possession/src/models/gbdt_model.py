@@ -47,6 +47,8 @@ class FallbackSpatialClassifier:
         self.std = None
 
     def fit(self, X, y, sample_weight=None):
+        X = np.asarray(X, dtype=np.float64)
+        y = np.asarray(y, dtype=np.int64)
         N, D = X.shape
         K = 4  # classes: 0, 1, 2, 3
 
@@ -92,6 +94,9 @@ class FallbackSpatialClassifier:
         return self
 
     def predict_proba(self, X):
+        if self.weights is None or self.mean is None:
+            raise ValueError("FallbackSpatialClassifier has not been fitted yet.")
+        X = np.asarray(X, dtype=np.float64)
         X_norm = np.nan_to_num((X - self.mean) / self.std, nan=0.0)
         logits = X_norm @ self.weights + self.bias
         logits_max = np.max(logits, axis=1, keepdims=True)
@@ -157,6 +162,7 @@ class PossessionGBDT:
         if self.model is None:
             raise ValueError("Model has not been fitted or loaded.")
 
+        X = np.asarray(X, dtype=np.float32)
         if hasattr(self.model, "predict_proba"):
             probs = self.model.predict_proba(X)
             # Ensure shape is (N, 4)
@@ -183,3 +189,4 @@ class PossessionGBDT:
         obj = cls(backend=data["backend"])
         obj.model = data["model"]
         return obj
+

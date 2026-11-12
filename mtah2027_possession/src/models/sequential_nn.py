@@ -38,7 +38,11 @@ if HAS_TORCH:
             self.dropout = nn.Dropout(dropout)
 
         def forward(self, x):
-            # x: (Batch, Seq_len, Features)
+            # Support both (Batch, Features) and (Batch, Seq_len, Features)
+            is_2d = (x.dim() == 2)
+            if is_2d:
+                x = x.unsqueeze(1)
+
             # Permute for 1D conv: (Batch, Features, Seq_len)
             x_in = x.transpose(1, 2)
             h = self.norm1(self.act(self.tcn1(x_in)))
@@ -51,8 +55,23 @@ if HAS_TORCH:
 
             # Logits: (Batch, Seq_len, num_classes)
             logits = self.fc(lstm_out)
+            if is_2d:
+                logits = logits.squeeze(1)
             return logits
+
+        def predict_proba(self, x):
+            """Return (N, 4) probability distribution over [H, A, D, X]."""
+            self.eval()
+            with torch.no_grad():
+                if not isinstance(x, torch.Tensor):
+                    x_t = torch.tensor(x, dtype=torch.float32)
+                else:
+                    x_t = x.float()
+                logits = self.forward(x_t)
+                probs = torch.softmax(logits, dim=-1)
+                return probs.cpu().numpy()
 else:
     class SequentialPossessionNet:
         def __init__(self, *args, **kwargs):
             raise ImportError("PyTorch is required for SequentialPossessionNet.")
+

@@ -65,7 +65,7 @@ class ViterbiSequenceDecoder:
                 continue
 
             code = (event["code"] or "").strip().upper()
-            team = event["tags"].get("Team")
+            team = (event["tags"].get("Team") or "").strip()
 
             # Rule 1: SET PIECES -> First 75% of duration is strictly Dead Ball (D)
             if code == "SET PIECES":
@@ -80,16 +80,16 @@ class ViterbiSequenceDecoder:
 
             # Rule 3: High-confidence possession phases -> Boost corresponding team
             elif code in ("PROGRESSION", "BUILD UP", "BALL IN FINAL THIRD"):
-                if team in ("Barcelona", "Home Team", "Home"):
+                if team in ("Barcelona", "Home Team", "Home", "FC Barcelona", "H"):
                     adjusted[start_f:end_f, H] *= self.boost_factor
-                elif team in ("Athletic Club", "Atletic Club", "Away Team", "Away"):
+                elif team in ("Athletic Club", "Atletic Club", "Away Team", "Away", "Athletic", "A"):
                     adjusted[start_f:end_f, A] *= self.boost_factor
 
             # Rule 4: ATTACKING TRANSITION
             elif code == "ATTACKING TRANSITION":
-                if team in ("Barcelona", "Home Team", "Home"):
+                if team in ("Barcelona", "Home Team", "Home", "FC Barcelona", "H"):
                     adjusted[start_f:end_f, H] *= 1.4
-                elif team in ("Athletic Club", "Atletic Club", "Away Team", "Away"):
+                elif team in ("Athletic Club", "Atletic Club", "Away Team", "Away", "Athletic", "A"):
                     adjusted[start_f:end_f, A] *= 1.4
 
         # Re-normalize rows
@@ -116,11 +116,12 @@ class ViterbiSequenceDecoder:
         viterbi[0] = log_emissions[0]
 
         # Forward pass
+        cols = np.arange(4)
         for t in range(1, N):
             # viterbi[t-1]: (4,), T: (4, 4) -> broadcast (4, 4)
             trans_scores = viterbi[t - 1, :, None] + T
             backpointer[t] = np.argmax(trans_scores, axis=0)
-            viterbi[t] = trans_scores[backpointer[t], np.arange(4)] + log_emissions[t]
+            viterbi[t] = trans_scores[backpointer[t], cols] + log_emissions[t]
 
         # Backward traceback
         best_path = np.zeros(N, dtype=np.int8)
@@ -131,3 +132,4 @@ class ViterbiSequenceDecoder:
 
         label_map = np.array(["H", "A", "D", "X"], dtype="<U1")
         return label_map[best_path]
+

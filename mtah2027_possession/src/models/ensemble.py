@@ -41,3 +41,4 @@ class EnsembleBlender:
         # Re-normalize across axis 1
         sum_p = np.sum(out, axis=1, keepdims=True) + 1e-9
         return out / sum_p
+
