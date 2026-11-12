@@ -53,6 +53,22 @@ data/*
 # insurance against it being recreated in here by habit.
 organizers/
 
+# -- broadcast / tactical video folders (gated media - never commit) --------------------------
+broadcast/
+tactical/
+data/broadcast/
+data/tactical/
+
+# -- trained model artefacts ------------------------------------------------------------------
+models/*.pkl
+models/*.pth
+models/*.h5
+*.pkl
+*.pth
+*.h5
+*.parquet
+*.feather
+
 # -- editors and build artifacts ---------------------------------------------------------------
 .idea/
 .vscode/
@@ -62,3 +78,32 @@ __pycache__/
 venv/
 env/
 .DS_Store
+
+# -- Our solution artifacts -------------------------------------------------------------------
+models/*.pkl
+models/*.pth
+*.pkl
+*.pth
+*.h5
+
+# Large intermediate files
+*.parquet
+*.feather
+
+# Notebook artefacts
+*.ipynb_checkpoints/
+
+# Python env / cache (belt-and-suspenders; some already above)
+__pycache__/
+*.py[cod]
+.env
+.venv/
+venv/
+env/
+
+# Data folders (gated match data - never commit)
+broadcast/
+tactical/
+data/broadcast/
+data/tactical/
+*.ipynb_checkpoints/

@@ -1,0 +1,123 @@
+# ============================================================
+# MTAH 2027 Possession Tracking Engine — Master Configuration
+# FC Barcelona Hackathon "More Than A Hack 2027"
+# ============================================================
+
+# ----- Data -----
+data:
+  game: "BAR-ATH"
+  source: "tactical"
+  n_video_frames: 199319
+  pitch_length_m: 105.3        # from games.GAMES["BAR-ATH"]["pitch"][0]
+  pitch_width_m: 68.0          # from games.GAMES["BAR-ATH"]["pitch"][1]
+  fps: 25
+  dt: 0.04                     # 1 / fps
+
+# ----- Kalman / RTS Smoother -----
+kalman:
+  q_noise: 0.005               # process noise (position component)
+  r_noise: 0.5                 # measurement noise (metres^2)
+  max_speed_ms: 38.0           # hard cap on ball speed (m/s), ~FIFA max
+  gap_unknown_frames: 125      # gaps longer than this → NaN (truly unknown)
+  dt: 0.04
+
+# ----- Feature Windows (frames) -----
+feature_windows:
+  - 5
+  - 15
+  - 25
+  - 50
+  - 125
+
+# ----- Micro Features -----
+micro:
+  n_top_players: 5             # top-k nearest per team for distance features
+  n_closing_players: 3         # for closing-velocity features
+  output_dim: 32
+
+# ----- Spatial Features -----
+spatial:
+  output_dim: 40
+  windows: [5, 15, 25]
+  voronoi_fallback: "numpy"    # "scipy" or "numpy"
+
+# ----- Pitch Control -----
+pitch_control:
+  sigma_tti: 0.45              # sigmoidal width parameter
+  v_max_player: 7.0            # max player speed (m/s)
+  reaction_time: 0.7           # reaction time before moving (s)
+  windows: [5, 15, 25]
+  output_dim: 8                # PC_H, PC_A, entropy, dominant + rolling versions
+
+# ----- GBDT Model -----
+gbdt:
+  num_leaves: 128
+  n_estimators: 800
+  learning_rate: 0.05
+  max_depth: 8
+  min_child_samples: 50
+  subsample: 0.8
+  colsample_bytree: 0.8
+  reg_alpha: 0.1
+  reg_lambda: 1.0
+  class_weight: "balanced"
+  transition_boundary_weight: 3.0   # upweight frames near label changes
+  transition_boundary_window: 5     # frames around a label change to upweight
+  random_state: 42
+  # Class mapping: H=0, A=1, D=2, X=3
+  classes: ["H", "A", "D", "X"]
+
+# ----- CatBoost Model -----
+catboost:
+  iterations: 600
+  learning_rate: 0.05
+  depth: 8
+  l2_leaf_reg: 3.0
+  random_state: 42
+
+# ----- Sequential NN (BiLSTM+TCN) -----
+sequential_nn:
+  hidden_dim: 256
+  tcn_channels: [128, 128, 64]
+  tcn_kernel_size: 3
+  tcn_dilations: [1, 2, 4, 8]
+  lstm_layers: 2
+  dropout: 0.3
+  seq_len: 125
+  batch_size: 32
+  epochs: 30
+  learning_rate: 0.001
+  device: "cpu"                # "cuda" if available
+
+# ----- Ensemble -----
+ensemble:
+  weights:
+    gbdt: 0.5
+    catboost: 0.5
+    nn: 0.0                   # set > 0 to blend in NN
+
+# ----- Viterbi Decoder -----
+viterbi:
+  trans_penalty_swap: -2.5    # H<->A direct swap penalty (log-prob)
+  trans_penalty_dead: -1.0    # penalty for entering/leaving D
+  trans_penalty_unknown: -3.0 # penalty for entering/leaving X
+  # Transition matrix layout: rows=from, cols=to, indices H=0, A=1, D=2, X=3
+  smart_tagging:
+    set_piece_dead_fraction: 0.75   # first N% of a set piece interval → D
+    build_up_boost: 1.8             # multiply team probability during build-up
+    progression_boost: 1.8
+    final_third_boost: 1.8
+
+# ----- Spell Pruner -----
+pruner:
+  min_spell_frames: 15        # spells shorter than this get merged
+  tau_high: 0.75              # probability threshold to enter a new state
+  tau_low: 0.25               # hysteresis low threshold
+  k_hold: 10                  # consecutive frames above tau_high required
+
+# ----- Paths -----
+paths:
+  pretrained_gbdt: "models/pretrained_gbdt.pkl"
+  pretrained_catboost: "models/pretrained_catboost.cbm"
+  pretrained_nn: "models/pretrained_nn.pt"
+  submission_out: "evaluation/results/submission_possession_v1.csv"

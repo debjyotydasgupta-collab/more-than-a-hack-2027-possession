@@ -1,0 +1,55 @@
+# Optimal hyperparameters tuned for maximum spellF1
+# FC Barcelona Hackathon "More Than A Hack 2027" - Ball Possession Tracking
+# Last tuned: Optuna TPE, 150 trials, 4-hour budget
+
+kalman:
+  q_process_noise: 0.005
+  r_measurement_noise: 0.5
+  max_ball_velocity: 38.0
+  max_gap_frames: 125
+
+features:
+  pitch_length: 105.0
+  pitch_width: 68.0
+  windows: [5, 15, 25, 50, 125]
+  top_k_players: 5
+  epsilon: 1e-6
+
+model:
+  lgb:
+    learning_rate: 0.05
+    num_leaves: 63
+    min_child_samples: 20
+    subsample: 0.8
+    colsample_bytree: 0.8
+    reg_alpha: 0.1
+    reg_lambda: 0.1
+    n_estimators: 500
+    class_weight: null
+  catboost:
+    learning_rate: 0.05
+    depth: 6
+    iterations: 500
+  ensemble_weights: [0.5, 0.5]
+
+postprocess:
+  trans_penalty_swap: -2.5
+  trans_penalty_dead: -1.0
+  tau_high: 0.75
+  tau_low: 0.25
+  min_spell_frames: 15
+  k_hold: 10
+
+smart_tagging:
+  set_piece_dead_fraction: 0.75
+  boost_factor: 1.8
+
+data:
+  n_frames: 199319
+  fps: 25
+  home_team: "Barcelona"
+  away_team: "Athletic Club"
+  home_label: "H"
+  away_label: "A"
+  dead_label: "D"
+  unknown_label: "X"
