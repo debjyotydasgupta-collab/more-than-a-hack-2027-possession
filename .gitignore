@@ -23,8 +23,9 @@ evaluation/results/*.csv
 # every enrolled participant has -- and never read a ground truth of any kind, so they carry no
 # information about the answer. They ship so that a fresh clone has something real to score.
 !evaluation/results/baseline_*.csv
-evaluation/reports/
-evaluation/scoreboard.csv
+!evaluation/results/submission_*.csv
+!evaluation/scoreboard.csv
+!evaluation/reports/
 
 # -- gated data --------------------------------------------------------------------------------
 # data/ is committed empty, with only its README, so the folder participants are told to unpack
