@@ -23,3 +23,4 @@ __all__ = [
     "CLASSES",
     "CLASS_LABELS",
 ]
+

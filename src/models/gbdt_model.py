@@ -30,3 +30,4 @@ __all__ = [
     "LABEL_TO_INT",
     "INT_TO_LABEL",
 ]
+

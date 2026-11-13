@@ -63,11 +63,14 @@ data/tactical/
 models/*.pkl
 models/*.pth
 models/*.h5
+models/*.npy
+*.npy
 *.pkl
 *.pth
 *.h5
 *.parquet
 *.feather
+catboost_info/
 
 # -- editors and build artifacts ---------------------------------------------------------------
 .idea/
