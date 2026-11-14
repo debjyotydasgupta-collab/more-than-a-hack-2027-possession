@@ -111,3 +111,4 @@ tactical/
 data/broadcast/
 data/tactical/
 *.ipynb_checkpoints/
+scratch/

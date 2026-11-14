@@ -100,9 +100,10 @@ class ViterbiSequenceDecoder:
         row_sums = np.sum(adjusted, axis=1, keepdims=True) + 1e-9
         return adjusted / row_sums
 
-    def decode(self, probs, smart_tag_events=None, dH=None, dA=None):
+    def decode(self, probs, smart_tag_events=None, dH=None, dA=None, z_ball=None):
         """Globally optimal Viterbi decoding over frame emissions.
-        Supports time-varying proximity-adaptive turnover transitions if dH and dA are provided.
+        Supports time-varying proximity-adaptive turnover transitions if dH and dA are provided,
+        and pseudo-3D height suppression when z_ball > 1.8m (airborne ball cannot be tackled on turf).
         """
         N = len(probs)
         if N == 0:
@@ -132,6 +133,14 @@ class ViterbiSequenceDecoder:
             sig_dH = 1.0 / (1.0 + np.exp(-np.clip((dH_clean - 1.5) / 0.5, -10.0, 10.0)))
             T_HA = self.trans_penalty_swap * sig_dA
             T_AH = self.trans_penalty_swap * sig_dH
+
+            # Phase 2: Aerial Trajectory Suppression (z > 1.8m)
+            # When the ball is airborne, turf-level players cannot execute a tackle or turnover
+            if z_ball is not None:
+                z_clean = np.nan_to_num(z_ball, nan=0.1)
+                airborne = (z_clean > 1.8)
+                T_HA[airborne] = min(self.trans_penalty_swap * 2.5, -6.0)
+                T_AH[airborne] = min(self.trans_penalty_swap * 2.5, -6.0)
 
         # Forward pass
         cols = np.arange(4)

@@ -176,10 +176,38 @@ blender = HybridPhysicsBlender(entropy_threshold=0.35, max_fallback=0.40)
 probs_hybrid = blender.blend(probs_ensemble, dH, dA, v_ball, ball_valid)
 print("  Physics-ML uncertainty blending & consistency gating complete ✓")
 
+# Step 4B: Ballistics Kalman Engine for Flight Latching (Pass-in-Flight)
+print("  Applying Ballistics Kalman Engine for pass-in-flight latching & pseudo-3D arcs...")
+from mtah2027_possession.src.physics.ballistics import BallisticsEngine
+bal_engine = BallisticsEngine(dt=0.04, kappa=0.08, sigma_z=0.15, q_acc=1.5)
+feats_bal, _ = bal_engine.compute_latched_features(frames_m[:, 46, :2], frames_m[:, :46, :2], team_of_track)
+is_flight = feats_bal[:, 2].astype(bool)
+latched_H = feats_bal[:, 3]
+z_ball = feats_bal[:, 8]
+
+for i_f in range(N_FRAMES):
+    if is_flight[i_f] or z_ball[i_f] > 1.8:
+        max_p = max(probs_hybrid[i_f, 0], probs_hybrid[i_f, 1])
+        if max_p < 0.85:
+            lh = latched_H[i_f]
+            if lh > 0.6:
+                probs_hybrid[i_f, 0] = max(probs_hybrid[i_f, 0], 0.88)
+                probs_hybrid[i_f, 1] = min(probs_hybrid[i_f, 1], 0.10)
+            elif lh < 0.4:
+                probs_hybrid[i_f, 1] = max(probs_hybrid[i_f, 1], 0.88)
+                probs_hybrid[i_f, 0] = min(probs_hybrid[i_f, 0], 0.10)
+
+probs_hybrid = np.clip(probs_hybrid, 1e-6, 1.0)
+probs_hybrid /= np.sum(probs_hybrid, axis=1, keepdims=True)
+
+# Effective 3D distance accounting for vertical height above turf
+dH_3d = bal_engine.compute_effective_3d_distance(dH, z_ball)
+dA_3d = bal_engine.compute_effective_3d_distance(dA, z_ball)
+
 # ===========================================================================
 # STEP 5: Phase C & 5 — Proximity-Adaptive Dynamic Viterbi Sequence Decoding
 # ===========================================================================
-print("\nSTEP 5: Proximity-Adaptive Dynamic Viterbi Sequence Decoding...")
+print("\nSTEP 5: Proximity-Adaptive Dynamic Viterbi Sequence Decoding (with 3D Aerial Suppression)...")
 
 from mtah2027_possession.src.postprocess.viterbi_decoder import ViterbiSequenceDecoder
 vd = ViterbiSequenceDecoder(
@@ -188,7 +216,7 @@ vd = ViterbiSequenceDecoder(
     trans_penalty_dead_to_live=TRANS_PENALTY_DEAD_TO_LIVE,
 )
 
-labels_raw = vd.decode(probs_hybrid, dH=dH, dA=dA)
+labels_raw = vd.decode(probs_hybrid, dH=dH_3d, dA=dA_3d, z_ball=z_ball)
 if isinstance(labels_raw[0], (int, np.integer)):
     labels = np.array([INT_TO_LABEL[int(x)] for x in labels_raw], dtype="<U1")
 else:
@@ -241,6 +269,18 @@ except Exception as e:
             replace   = prev_lbl if prev_lbl == next_lbl else ("D" if "D" in (prev_lbl, next_lbl) else prev_lbl)
             labels[i:j] = replace
         i = j
+
+# ===========================================================================
+# STEP 7B: Phase 1 — Boundary Impulse Snapping (Kinematic Impact Alignment)
+# ===========================================================================
+print("\nSTEP 7B: Boundary Impulse Snapping (Kinematic Impact Alignment)...")
+try:
+    from mtah2027_possession.src.postprocess.boundary_snapper import BoundaryImpulseSnapper
+    snapper = BoundaryImpulseSnapper(dt=0.04, search_window=4, accel_thresh=22.0)
+    labels = snapper.snap_boundaries(labels, frames_m[:, 46, :2], frames_m[:, :46, :2], team_of_track)
+    print("  Boundary impulse snapping complete ✓")
+except Exception as e:
+    print(f"  Boundary impulse snapping skipped ({e})")
 
 # ===========================================================================
 # STEP 8: Match clock boundary enforcement (Strict Dead Ball)

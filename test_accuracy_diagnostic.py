@@ -23,6 +23,7 @@ REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, REPO_ROOT)
 import evaluation.possession_metrics as pm
 from mtah2027_possession.src.features.invariant_features import InvariantFeatureExtractor
+from mtah2027_possession.src.physics.ballistics import BallisticsEngine
 from mtah2027_possession.src.postprocess.viterbi_decoder import ViterbiSequenceDecoder
 
 # 1. Load Data & Models
@@ -227,8 +228,28 @@ def augment_inv(X_feats, y_labels):
 
 vd_loso = ViterbiSequenceDecoder(trans_penalty_swap=-1.2, trans_penalty_dead=-1.0, trans_penalty_dead_to_live=-0.3)
 
+ballistics = BallisticsEngine(dt=0.04, kappa=0.08, sigma_z=0.15, q_acc=1.5)
+feats_bal, touch_info = ballistics.compute_latched_features(frames_m[:, 46, :2], frames_m[:, :46, :2], team_of_track)
+is_flight = feats_bal[:, 2].astype(bool)
+latched_H = feats_bal[:, 3]
+z_ball = feats_bal[:, 8]
+
+dH_3d = ballistics.compute_effective_3d_distance(dH_clean, z_ball)
+dA_3d = ballistics.compute_effective_3d_distance(dA_clean, z_ball)
+
+def compute_tolerant_accuracy(y_t, y_p, window=5):
+    N = len(y_t)
+    correct = 0
+    for t in range(N):
+        start = max(0, t - window)
+        end = min(N, t + window + 1)
+        if y_t[t] in y_p[start:end]:
+            correct += 1
+    return (correct / N) * 100.0
+
 loso_accs_base = []
 loso_accs_hybrid = []
+loso_accs_tolerant = []
 
 for test_seg in range(min(10, n_segs)):
     tr_mask = (seg_ids != test_seg)
@@ -246,7 +267,7 @@ for test_seg in range(min(10, n_segs)):
     acc_b = accuracy_score(y_val, pred_base) * 100
     loso_accs_base.append(acc_b)
     
-    # 2. Hierarchical Decoupled Invariant + Bayesian Engine
+    # 2. Hierarchical Decoupled Invariant + Ballistics Latching Engine
     m_state = lgb.LGBMClassifier(n_estimators=100, num_leaves=15, learning_rate=0.08, n_jobs=-1, verbosity=-1, random_state=42)
     m_state.fit(X_state[tr_mask], is_live[tr_mask])
     p_live = m_state.predict_proba(X_state[va_mask])[:, 1]
@@ -260,6 +281,18 @@ for test_seg in range(min(10, n_segs)):
     beta_seg = beta[va_mask]
     vor_seg = p_vor_H[va_mask]
     p_owner_H = (1.0 - beta_seg) * p_gbdt_H + beta_seg * vor_seg
+
+    # Method 1 Pass-in-Flight Ballistic Latching
+    flight_seg = is_flight[va_mask]
+    latched_H_seg = latched_H[va_mask]
+    for idx_f in range(n_f):
+        if flight_seg[idx_f]:
+            lh_val = latched_H_seg[idx_f]
+            if lh_val > 0.6:
+                p_owner_H[idx_f] = max(p_owner_H[idx_f], 0.92)
+            elif lh_val < 0.4:
+                p_owner_H[idx_f] = min(p_owner_H[idx_f], 0.08)
+
     p_owner_A = 1.0 - p_owner_H
     
     probs = np.zeros((n_f, 4), dtype=np.float32)
@@ -268,18 +301,23 @@ for test_seg in range(min(10, n_segs)):
     probs[:, 2] = 1.0 - p_live
     probs /= np.sum(probs, axis=1, keepdims=True)
     
-    decoded = vd_loso.decode(probs, dH=dH_clean[va_mask], dA=dA_clean[va_mask])
+    decoded = vd_loso.decode(probs, dH=dH_3d[va_mask], dA=dA_3d[va_mask], z_ball=z_ball[va_mask])
     pred_int = np.array([{'H': 0, 'A': 1, 'D': 2, 'X': 3}[x] if isinstance(x, str) else x for x in decoded])
     acc_h = accuracy_score(y_val, pred_int) * 100
+    acc_tol = compute_tolerant_accuracy(y_val, pred_int, window=5)
+
     loso_accs_hybrid.append(acc_h)
+    loso_accs_tolerant.append(acc_tol)
 
 loso_mean_base = np.mean(loso_accs_base)
 loso_mean_hybrid = np.mean(loso_accs_hybrid)
+loso_mean_tol = np.mean(loso_accs_tolerant)
 loso_mean = loso_mean_hybrid
 loso_err = 100.0 - loso_mean
 print(f"  Evaluated across {len(loso_accs_hybrid)} temporal segments")
 print(f"  Baseline Raw LOSO Accuracy    : {loso_mean_base:.2f}%  (Error: {100.0 - loso_mean_base:.2f}%)")
-print(f"  Hierarchical Bayesian Invariant: {loso_mean_hybrid:.2f}%  (Error: {100.0 - loso_mean_hybrid:.2f}%)")
+print(f"  Hierarchical Ballistic Engine : {loso_mean_hybrid:.2f}%  (Error: {100.0 - loso_mean_hybrid:.2f}%)")
+print(f"  Boundary-Tolerant (±0.2s) Acc : {loso_mean_tol:.2f}%  (Error: {100.0 - loso_mean_tol:.2f}%)")
 print(f"  --> Relative Accuracy Gain    : {loso_mean_hybrid - loso_mean_base:+.2f}% points (+{(loso_mean_hybrid - loso_mean_base)/loso_mean_base*100:.1f}%)")
 
 # ---------------------------------------------------------------------------
@@ -325,7 +363,8 @@ final_score = (0.40 * score_benchmark) + (0.25 * score_oof) + (0.20 * score_loso
 print(f"\n1. ACCURACY BENCHMARK SUMMARY:")
 print(f"   • Full Ground Truth Pipeline Accuracy : {acc_t1:.2f}%  | Error: {err_t1:.2f}%")
 print(f"   • 5-Fold Cross-Validation Accuracy     : {oof_mean_acc:.2f}%  | Error: {oof_err:.2f}%")
-print(f"   • Leave-One-Segment-Out Accuracy       : {loso_mean:.2f}%  | Error: {loso_err:.2f}%")
+print(f"   • Leave-One-Segment-Out (Strict)       : {loso_mean:.2f}%  | Error: {loso_err:.2f}%")
+print(f"   • Leave-One-Segment-Out (±0.2s Tol)    : {loso_mean_tol:.2f}%  | Error: {100.0 - loso_mean_tol:.2f}%")
 print(f"   • Under Simulated Tracking Noise       : {noisy_acc:.2f}%  | Error: {100.0 - noisy_acc:.2f}%")
 print(f"   • Under 20% Sensor Dropout             : {dropout_acc:.2f}%  | Error: {100.0 - dropout_acc:.2f}%")
 
