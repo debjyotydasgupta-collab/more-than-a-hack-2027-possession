@@ -57,8 +57,8 @@ DEAD_BALL_REGIONS = [
 
 # Parse arguments
 parser = argparse.ArgumentParser(description="Train Ball Possession Models")
-parser.add_argument("--mode", type=str, default="calibrated", choices=["self_supervised", "calibrated"],
-                    help="Training mode: 'self_supervised' (0 human labels) or 'calibrated' (calibrated teacher)")
+parser.add_argument("--mode", type=str, default="self_supervised", choices=["self_supervised", "calibrated"],
+                    help="Default to 100% self-supervised algorithmic physics anchors (0 human labels)")
 args = parser.parse_args()
 
 print("=" * 80)

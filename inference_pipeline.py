@@ -17,7 +17,7 @@ Usage:
     & "C:\Program Files\FreeCAD 1.0\bin\python.exe" inference_pipeline.py
 """
 
-import os, sys, pickle, time, warnings
+import os, sys, pickle, time, warnings, argparse
 import numpy as np
 import pandas as pd
 
@@ -29,6 +29,11 @@ sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, "starter"))
 sys.path.insert(0, os.path.join(REPO_ROOT, "mtah2027_possession"))
 
+# --- Parse arguments ---
+parser = argparse.ArgumentParser(description="Hybrid ML-Physics Inference Pipeline")
+parser.add_argument("--out", type=str, default=None, help="Output CSV path for submission")
+cli_args, _ = parser.parse_known_args()
+
 # --- Constants ---
 ATD_TXT     = os.path.join(REPO_ROOT, "data", "tactical", "BAR-ATH_tactical_atd.txt")
 ATD_XML     = os.path.join(REPO_ROOT, "data", "tactical", "BAR-ATH_tactical_atd.xml")
@@ -36,9 +41,10 @@ FEAT_PATH   = os.path.join(REPO_ROOT, "models", "features_all.npy")
 LGB_PATH    = os.path.join(REPO_ROOT, "models", "lgb_model.pkl")
 CB_PATH     = os.path.join(REPO_ROOT, "models", "cb_model.pkl")
 RESULTS_DIR = os.path.join(REPO_ROOT, "evaluation", "results")
-OUT_CSV     = os.path.join(RESULTS_DIR, "submission_gbdt_v1.csv")
-ALT_CSV     = os.path.join(RESULTS_DIR, "submission_possession_v1.csv")
 os.makedirs(RESULTS_DIR, exist_ok=True)
+
+OUT_CSV = cli_args.out if cli_args.out else os.path.join(RESULTS_DIR, "submission_possession_v1.csv")
+ALT_CSV = os.path.join(RESULTS_DIR, "submission_gbdt_v1.csv")
 
 PITCH_LENGTH = 105.3
 PITCH_WIDTH  = 68.0
@@ -82,9 +88,15 @@ if os.path.exists(CB_PATH):
 else:
     print(f"  CatBoost model NOT FOUND at {CB_PATH}")
 
-if lgb_model is None and cb_model is None:
-    print("ERROR: No models found. Run train_model.py first.")
-    sys.exit(1)
+if (lgb_model is None and cb_model is None) or not os.path.exists(FEAT_PATH):
+    print("Models or feature matrix missing. Automatically training self-supervised pipeline...")
+    import subprocess
+    cmd = [sys.executable, os.path.join(REPO_ROOT, "train_model.py"), "--mode", "self_supervised"]
+    subprocess.run(cmd, check=True, cwd=REPO_ROOT)
+    if os.path.exists(LGB_PATH):
+        with open(LGB_PATH, "rb") as f: lgb_model = pickle.load(f)
+    if os.path.exists(CB_PATH):
+        with open(CB_PATH, "rb") as f: cb_model = pickle.load(f)
 
 # ===========================================================================
 # STEP 2: Load features and raw ATD coordinates for physics fallback
@@ -93,7 +105,7 @@ print("\nSTEP 2: Loading feature matrix & raw tracking coordinates...")
 t0 = time.time()
 
 if not os.path.exists(FEAT_PATH):
-    print("ERROR: features_all.npy missing. Run train_model.py first.")
+    print("ERROR: features_all.npy could not be generated. Please check ATD data.")
     sys.exit(1)
 
 X_all = np.load(FEAT_PATH)
@@ -315,16 +327,16 @@ validate_script = os.path.join(REPO_ROOT, "evaluation", "validate_submission.py"
 if os.path.exists(validate_script):
     import subprocess
     r = subprocess.run(
-        ["C:\\Program Files\\FreeCAD 1.0\\bin\\python.exe", validate_script, OUT_CSV],
+        [sys.executable, validate_script, OUT_CSV],
         capture_output=True, text=True, cwd=REPO_ROOT
     )
     print(r.stdout)
 
 eval_script = os.path.join(REPO_ROOT, "evaluation", "run_evaluation.py")
-if os.path.exists(eval_script):
+if os.path.exists(eval_script) and os.path.exists(os.path.join(REPO_ROOT, "evaluation", "gt", "BAR-ATH_possession_gt_public.csv")):
     import subprocess
     r = subprocess.run(
-        ["C:\\Program Files\\FreeCAD 1.0\\bin\\python.exe", eval_script],
+        [sys.executable, eval_script],
         capture_output=True, text=True, cwd=REPO_ROOT
     )
     print(r.stdout)
