@@ -1,12 +1,11 @@
 status,gt_frame,pred_frame,latency,gt_from,gt_to,pred_from,pred_to
-spurious,,11222,,,,D,A
 matched,11351,11351,0,A,H,A,H
 matched,11553,11553,0,H,A,H,A
 matched,11624,11624,0,A,H,A,H
-matched,12665,12665,0,H,A,H,A
+matched,12665,12660,-5,H,A,H,A
 matched,12851,12851,0,A,D,A,D
 matched,12989,12989,0,D,H,D,H
-matched,13704,13704,0,H,A,H,A
+matched,13704,13703,-1,H,A,H,A
 matched,13785,13785,0,A,H,A,H
 matched,14846,14846,0,H,A,H,A
 matched,15346,15346,0,A,H,A,H
@@ -17,6 +16,6 @@ matched,15889,15889,0,A,D,A,D
 matched,16400,16400,0,D,A,D,A
 matched,17293,17293,0,A,H,A,H
 matched,17380,17380,0,H,D,H,D
-missed,17838,,,D,A,,
-missed,18027,,,A,D,,
-missed,18389,,,D,H,,
+matched,17838,17838,0,D,A,D,A
+matched,18027,18027,0,A,D,A,D
+matched,18389,18389,0,D,H,D,H

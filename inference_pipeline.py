@@ -1,25 +1,23 @@
 """
 inference_pipeline.py
 =====================
-Full GBDT ensemble inference pipeline for Ball Possession classification.
+Generalized Hybrid ML-Physics Inference Pipeline for Ball Possession Classification.
 More than a Hack 2027 — Phase 1: Ball Possession.
 
-Steps:
-  1. Load pre-trained LightGBM + CatBoost models
-  2. Load pre-computed feature matrix (or recompute if missing)
-  3. Run ensemble inference across ALL 199,319 frames → (N, 4) probability matrix
-  4. Apply Viterbi decoder for temporal smoothing
-  5. Apply smart-tagging rule overrides (SET PIECES → D, etc.)
-  6. Enforce match clock boundary rules (pre-kickoff, halftime, post-match → D)
-  7. Apply spell pruner (min_spell_frames=15)
-  8. Output evaluation/results/submission_gbdt_v1.csv
-  9. Validate and score
+Features:
+  1. Student Ensemble (LightGBM + CatBoost) trained on 4-way pitch symmetry & full match
+  2. Phase 3: Hybrid Physics-ML Uncertainty Blending (Shannon entropy + Voronoi inverse-dist prior)
+  3. Phase 5: Asymmetric Viterbi sequence decoding (lower restart barrier Dead -> Live)
+  4. Tactical Smart Tagging overrides (guaranteed goal stoppages)
+  5. Short spell pruning (min_spell_frames=15, 0.6s)
+  6. Match clock boundary enforcement (pre-kickoff, halftime, post-match -> Dead Ball)
+  7. Output generation & validation (submission_gbdt_v1.csv & submission_possession_v1.csv)
 
 Usage:
     & "C:\Program Files\FreeCAD 1.0\bin\python.exe" inference_pipeline.py
 """
 
-import os, sys, pickle, warnings
+import os, sys, pickle, time, warnings
 import numpy as np
 import pandas as pd
 
@@ -39,6 +37,7 @@ LGB_PATH    = os.path.join(REPO_ROOT, "models", "lgb_model.pkl")
 CB_PATH     = os.path.join(REPO_ROOT, "models", "cb_model.pkl")
 RESULTS_DIR = os.path.join(REPO_ROOT, "evaluation", "results")
 OUT_CSV     = os.path.join(RESULTS_DIR, "submission_gbdt_v1.csv")
+ALT_CSV     = os.path.join(RESULTS_DIR, "submission_possession_v1.csv")
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
 PITCH_LENGTH = 105.3
@@ -47,40 +46,39 @@ N_FRAMES     = 199_319
 
 INT_TO_LABEL = {0: "H", 1: "A", 2: "D", 3: "X"}
 
-# Match clock boundary frames (inclusive) → forced Dead Ball
+# Match clock boundary frames (forced Dead Ball)
 DEAD_BALL_REGIONS = [
     (0, 11184),           # Pre-kickoff
     (90652, 110807),      # Halftime
     (190198, 199318),     # Post-match
 ]
 
-# Minimum spell duration (frames)
 MIN_SPELL_FRAMES = 15
 
-# Viterbi parameters
-TRANS_PENALTY_SWAP = -2.5    # penalty for H↔A swap
-TRANS_PENALTY_DEAD = -1.0    # penalty for H/A ↔ D swap
-TRANS_PENALTY_SAME =  0.0    # no penalty for same-class
+# Viterbi parameters (Asymmetric)
+TRANS_PENALTY_SWAP = -2.5          # Penalty for H <-> A direct turnover
+TRANS_PENALTY_DEAD = -1.0          # Penalty for Live -> Dead (stoppage)
+TRANS_PENALTY_DEAD_TO_LIVE = -0.3  # Lower penalty for Dead -> Live restart
 
 # ===========================================================================
-# STEP 1: Load models
+# STEP 1: Load trained Student Models
 # ===========================================================================
 print("=" * 60)
-print("STEP 1: Loading trained models...")
+print("STEP 1: Loading trained Student Models...")
 
 lgb_model = cb_model = None
 
 if os.path.exists(LGB_PATH):
     with open(LGB_PATH, "rb") as f:
         lgb_model = pickle.load(f)
-    print(f"  LightGBM loaded ✓  ({LGB_PATH})")
+    print(f"  Student LightGBM loaded ✓  ({LGB_PATH})")
 else:
     print(f"  LightGBM model NOT FOUND at {LGB_PATH}")
 
 if os.path.exists(CB_PATH):
     with open(CB_PATH, "rb") as f:
         cb_model = pickle.load(f)
-    print(f"  CatBoost  loaded ✓  ({CB_PATH})")
+    print(f"  Student CatBoost  loaded ✓  ({CB_PATH})")
 else:
     print(f"  CatBoost model NOT FOUND at {CB_PATH}")
 
@@ -89,63 +87,32 @@ if lgb_model is None and cb_model is None:
     sys.exit(1)
 
 # ===========================================================================
-# STEP 2: Load feature matrix (precomputed) or recompute
+# STEP 2: Load features and raw ATD coordinates for physics fallback
 # ===========================================================================
-print("\nSTEP 2: Loading feature matrix...")
+print("\nSTEP 2: Loading feature matrix & raw tracking coordinates...")
+t0 = time.time()
 
-if os.path.exists(FEAT_PATH):
-    X_all = np.load(FEAT_PATH)
-    print(f"  Loaded cached features: {X_all.shape} from {FEAT_PATH}")
-else:
-    print("  Feature matrix not found — recomputing from ATD...")
-    import time
-    t0 = time.time()
+if not os.path.exists(FEAT_PATH):
+    print("ERROR: features_all.npy missing. Run train_model.py first.")
+    sys.exit(1)
 
-    from mtah2027_possession.src.data.load_atd import load_raw_atd
-    frames_raw, team_of_track = load_raw_atd(ATD_TXT, n_frames=N_FRAMES)
+X_all = np.load(FEAT_PATH)
+print(f"  Loaded feature matrix: {X_all.shape} ({time.time()-t0:.1f}s)")
 
-    # Metres conversion
-    frames_m = frames_raw.copy()
-    frames_m[:, :, 0] *= PITCH_LENGTH
-    frames_m[:, :, 1] *= PITCH_WIDTH
-
-    player_positions_m = frames_m[:, :46, :2]
-    player_speed_ms    = frames_m[:, :46, 2]
-
-    from mtah2027_possession.src.preprocessing.kalman_filter import RTSBallSmoother
-    smoother = RTSBallSmoother()
-    ball_xy_m_smooth = smoother.smooth_ball_trajectory(frames_raw)
-
-    ball_diff    = np.diff(ball_xy_m_smooth, axis=0, prepend=ball_xy_m_smooth[[0]])
-    ball_speed   = np.sqrt(ball_diff[:, 0]**2 + ball_diff[:, 1]**2) / 0.04
-    ball_accel   = np.diff(ball_speed, prepend=ball_speed[0]) / 0.04
-    ball_speed   = np.nan_to_num(ball_speed, nan=0.0).astype(np.float32)
-    ball_accel   = np.nan_to_num(ball_accel,  nan=0.0).astype(np.float32)
-
-    from mtah2027_possession.src.features.micro_features    import MicroFeatureExtractor
-    from mtah2027_possession.src.features.spatial_features  import SpatialFeatureExtractor
-    from mtah2027_possession.src.features.pitch_control     import PitchControlFeatureExtractor
-
-    X_micro   = MicroFeatureExtractor(team_of_track, PITCH_LENGTH, PITCH_WIDTH).extract(
-                    player_positions_m, ball_xy_m_smooth, ball_speed, ball_accel)
-    X_spatial = SpatialFeatureExtractor(team_of_track, PITCH_LENGTH, PITCH_WIDTH).extract(
-                    player_positions_m, ball_xy_m_smooth)
-    X_pc      = PitchControlFeatureExtractor(team_of_track, PITCH_LENGTH, PITCH_WIDTH).extract(
-                    player_positions_m, player_speed_ms, ball_xy_m_smooth)
-
-    X_all = np.concatenate([X_micro, X_spatial, X_pc], axis=1).astype(np.float32)
-    os.makedirs(os.path.dirname(FEAT_PATH), exist_ok=True)
-    np.save(FEAT_PATH, X_all)
-    print(f"  Feature extraction time: {time.time()-t0:.1f}s, shape: {X_all.shape}")
+# Load tracking for physical prior
+from mtah2027_possession.src.data.load_atd import load_raw_atd
+frames_raw, team_of_track = load_raw_atd(ATD_TXT, n_frames=N_FRAMES)
+frames_m = frames_raw.copy()
+frames_m[:, :, 0] *= PITCH_LENGTH
+frames_m[:, :, 1] *= PITCH_WIDTH
 
 # ===========================================================================
-# STEP 3: Ensemble inference → probability matrix (N, 4)
+# STEP 3: Ensemble inference -> (N, 4) Probability Matrix
 # ===========================================================================
-print("\nSTEP 3: Running GBDT ensemble inference...")
+print("\nSTEP 3: Running Student GBDT Ensemble inference...")
 BATCH = 50_000
 
 def predict_proba_batched(model, X, batch_size=BATCH, model_name="model"):
-    """Batched probability prediction to avoid OOM."""
     N = X.shape[0]
     probs = np.zeros((N, 4), dtype=np.float32)
     classes = getattr(model, "classes_", None)
@@ -172,14 +139,11 @@ n_models  = 0
 if lgb_model is not None:
     probs_lgb = predict_proba_batched(lgb_model, X_all, model_name="LGB")
     n_models += 1
-    print(f"  LGB proba sample (frame 12000): {probs_lgb[12000]}")
 
 if cb_model is not None:
     probs_cb = predict_proba_batched(cb_model, X_all, model_name="CB")
     n_models += 1
-    print(f"  CB  proba sample (frame 12000): {probs_cb[12000]}")
 
-# Ensemble average (equal weight)
 if n_models == 2:
     probs_ensemble = 0.5 * probs_lgb + 0.5 * probs_cb
 elif lgb_model is not None:
@@ -187,74 +151,83 @@ elif lgb_model is not None:
 else:
     probs_ensemble = probs_cb
 
-print(f"  Ensemble proba sample (frame 12000): {probs_ensemble[12000]}")
+# ===========================================================================
+# STEP 4: Phase A & 3 — Hybrid Physics-ML Uncertainty Blending & Physical Gating
+# ===========================================================================
+print("\nSTEP 4: Applying Hybrid Physics-ML Uncertainty Blending & Physical Gating...")
+
+H_mask = (team_of_track == 0)
+A_mask = (team_of_track == 1)
+bx = frames_m[:, 46, 0]
+by = frames_m[:, 46, 1]
+ball_valid = ~np.isnan(bx)
+players_m = frames_m[:, :46, :]
+
+dH = np.nanmin(np.sqrt((players_m[:, H_mask, 0] - bx[:, None])**2 + 
+                       (players_m[:, H_mask, 1] - by[:, None])**2), axis=1)
+dA = np.nanmin(np.sqrt((players_m[:, A_mask, 0] - bx[:, None])**2 + 
+                       (players_m[:, A_mask, 1] - by[:, None])**2), axis=1)
+
+diff_b = np.diff(np.nan_to_num(frames_m[:, 46, :2], nan=0.0), axis=0, prepend=np.nan_to_num(frames_m[[0], 46, :2], nan=0.0))
+v_ball = np.sqrt(diff_b[:, 0]**2 + diff_b[:, 1]**2) / 0.04
+
+from mtah2027_possession.src.models.hybrid_blender import HybridPhysicsBlender
+blender = HybridPhysicsBlender(entropy_threshold=0.35, max_fallback=0.40)
+probs_hybrid = blender.blend(probs_ensemble, dH, dA, v_ball, ball_valid)
+print("  Physics-ML uncertainty blending & consistency gating complete ✓")
 
 # ===========================================================================
-# STEP 4: Viterbi decoder for temporal smoothing
+# STEP 5: Phase C & 5 — Proximity-Adaptive Dynamic Viterbi Sequence Decoding
 # ===========================================================================
-print("\nSTEP 4: Viterbi decoding...")
+print("\nSTEP 5: Proximity-Adaptive Dynamic Viterbi Sequence Decoding...")
 
-try:
-    from mtah2027_possession.src.postprocess.viterbi_decoder import ViterbiSequenceDecoder
-    from mtah2027_possession.src.data.load_smart_tagging import load_with_team_labels
-    events = load_with_team_labels()
-    vd = ViterbiSequenceDecoder(
-        trans_penalty_swap=TRANS_PENALTY_SWAP,
-        trans_penalty_dead=TRANS_PENALTY_DEAD,
-    )
-    # decode() expects probability matrix (N,4), returns string array ['H','A','D','X']
-    labels_raw = vd.decode(probs_ensemble, smart_tag_events=events)
-    print("  Viterbi decoding ✓")
-    if isinstance(labels_raw[0], (int, np.integer)):
-        labels = np.array([INT_TO_LABEL[int(x)] for x in labels_raw], dtype="<U1")
-    else:
-        labels = np.array(labels_raw, dtype="<U1")
-except Exception as e:
-    print(f"  Viterbi failed ({e}), falling back to argmax...")
-    labels_int = np.argmax(probs_ensemble, axis=1)
-    labels = np.array([INT_TO_LABEL[i] for i in labels_int], dtype="<U1")
+from mtah2027_possession.src.postprocess.viterbi_decoder import ViterbiSequenceDecoder
+vd = ViterbiSequenceDecoder(
+    trans_penalty_swap=TRANS_PENALTY_SWAP,
+    trans_penalty_dead=TRANS_PENALTY_DEAD,
+    trans_penalty_dead_to_live=TRANS_PENALTY_DEAD_TO_LIVE,
+)
+
+labels_raw = vd.decode(probs_hybrid, dH=dH, dA=dA)
+if isinstance(labels_raw[0], (int, np.integer)):
+    labels = np.array([INT_TO_LABEL[int(x)] for x in labels_raw], dtype="<U1")
+else:
+    labels = np.array(labels_raw, dtype="<U1")
 
 print(f"  Label distribution after Viterbi: { {l: int(np.sum(labels==l)) for l in ['H','A','D','X']} }")
 
 # ===========================================================================
-# STEP 5: Smart Tagging rule overrides
+# STEP 6: Tactical Smart Tagging overrides (True Dead Ball Events)
 # ===========================================================================
-print("\nSTEP 5: Applying Smart Tagging rule overrides...")
+print("\nSTEP 6: Applying tactical overrides (Guaranteed Stoppages)...")
 
 try:
     from mtah2027_possession.src.data.load_smart_tagging import load_with_team_labels
-
     events = load_with_team_labels()
-    # Dead-ball event codes → force D
-    DEAD_BALL_CODES = {
-        "SET PIECES", "CORNER KICK", "FREE KICK", "THROW IN",
-        "GOAL KICK", "PENALTY KICK", "KICK OFF", "GOAL", "FOUL", "OUT OF PLAY"
-    }
     n_overridden = 0
     for ev in events:
         code = ev.get("code", "").strip().upper()
-        if any(dbc in code for dbc in DEAD_BALL_CODES):
+        if code in ("GOALS", "GOAL"):
             s = max(0, ev["start_frame"])
             e = min(N_FRAMES, ev["end_frame"])
             labels[s:e] = "D"
             n_overridden += (e - s)
-    print(f"  Smart Tagging: overrode {n_overridden:,} frames to D via {len(events)} events")
+    print(f"  Smart Tagging: overrode {n_overridden:,} goal stoppage frames to D")
 except Exception as e:
     print(f"  Smart Tagging override skipped: {e}")
 
 # ===========================================================================
-# STEP 6: Spell pruning (min 15 frames) — done BEFORE boundary enforcement
+# STEP 7: Short Spell Pruner (min 15 frames = 0.6s)
 # ===========================================================================
-print(f"\nSTEP 6: Spell pruning (min_spell_frames={MIN_SPELL_FRAMES})...")
+print(f"\nSTEP 7: Spell pruning (min_spell_frames={MIN_SPELL_FRAMES})...")
 
 try:
     from mtah2027_possession.src.postprocess.spell_pruner import PruneShortSpells
     pruner = PruneShortSpells(min_spell_frames=MIN_SPELL_FRAMES)
     labels = pruner.prune_short_spells(labels)
-    print("  Spell pruning ✓ (via PruneShortSpells.prune_short_spells)")
+    print("  Spell pruning ✓ (via PruneShortSpells)")
 except Exception as e:
-    print(f"  PruneShortSpells module failed ({e}), using inline pruner...")
-    # Inline spell pruner
+    print(f"  PruneShortSpells fallback ({e})...")
     i = 0
     while i < N_FRAMES:
         cur = labels[i]
@@ -263,7 +236,6 @@ except Exception as e:
             j += 1
         spell_len = j - i
         if spell_len < MIN_SPELL_FRAMES and cur != "D":
-            # Find most common neighbor label
             prev_lbl = labels[i-1] if i > 0 else "D"
             next_lbl = labels[j]   if j < N_FRAMES else "D"
             replace   = prev_lbl if prev_lbl == next_lbl else ("D" if "D" in (prev_lbl, next_lbl) else prev_lbl)
@@ -271,33 +243,33 @@ except Exception as e:
         i = j
 
 # ===========================================================================
-# STEP 7: Match clock boundary enforcement (Dead Ball) — strictly enforced last
+# STEP 8: Match clock boundary enforcement (Strict Dead Ball)
 # ===========================================================================
-print("\nSTEP 7: Enforcing match clock boundaries (Dead Ball)...")
+print("\nSTEP 8: Enforcing match clock boundaries (Dead Ball)...")
 
 for s, e in DEAD_BALL_REGIONS:
     s = max(0, s)
     e = min(N_FRAMES - 1, e)
     labels[s:e+1] = "D"
-    print(f"  Frames {s:,}..{e:,} → D ({e-s+1:,} frames)")
+    print(f"  Frames {s:,}..{e:,} -> D ({e-s+1:,} frames)")
 
 label_dist = {l: int(np.sum(labels == l)) for l in ["H", "A", "D", "X"]}
 print(f"  Final label distribution: {label_dist}")
 
 # ===========================================================================
-# STEP 8: Write submission CSV
+# STEP 9: Write submission CSVs
 # ===========================================================================
-print(f"\nSTEP 8: Writing submission CSV → {OUT_CSV}")
-
+print(f"\nSTEP 9: Writing submission CSVs...")
 out_df = pd.DataFrame({"frame": np.arange(N_FRAMES), "label": labels})
 out_df.to_csv(OUT_CSV, index=False)
-print(f"  Written {len(out_df):,} rows")
+out_df.to_csv(ALT_CSV, index=False)
+print(f"  Written {len(out_df):,} rows to {OUT_CSV} and {ALT_CSV}")
 print(f"  Label counts: {out_df['label'].value_counts().to_dict()}")
 
 # ===========================================================================
-# STEP 9: Validate
+# STEP 10: Validate and Score
 # ===========================================================================
-print("\nSTEP 9: Validating submission...")
+print("\nSTEP 10: Validating & Scoring...")
 
 validate_script = os.path.join(REPO_ROOT, "evaluation", "validate_submission.py")
 if os.path.exists(validate_script):
@@ -307,15 +279,6 @@ if os.path.exists(validate_script):
         capture_output=True, text=True, cwd=REPO_ROOT
     )
     print(r.stdout)
-    if r.stderr:
-        print("STDERR:", r.stderr[:500])
-else:
-    print("  validate_submission.py not found, skipping validation")
-
-# ===========================================================================
-# STEP 10: Score
-# ===========================================================================
-print("\nSTEP 10: Scoring...")
 
 eval_script = os.path.join(REPO_ROOT, "evaluation", "run_evaluation.py")
 if os.path.exists(eval_script):
@@ -325,12 +288,7 @@ if os.path.exists(eval_script):
         capture_output=True, text=True, cwd=REPO_ROOT
     )
     print(r.stdout)
-    if r.stderr:
-        print("STDERR:", r.stderr[:500])
-else:
-    print("  run_evaluation.py not found, skipping scoring")
 
 print("\n" + "=" * 60)
-print("INFERENCE COMPLETE")
-print(f"  Output: {OUT_CSV}")
+print("HYBRID INFERENCE PIPELINE COMPLETE")
 print("=" * 60)

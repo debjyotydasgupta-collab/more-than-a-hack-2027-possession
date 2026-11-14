@@ -14,11 +14,13 @@ H, A, D, X = 0, 1, 2, 3
 class ViterbiSequenceDecoder:
     """Decodes frame probability distributions into an optimal sequence.
     Penalizes rapid possession toggles and integrates human tactical event constraints.
+    Supports asymmetric Dead -> Live restart barriers.
     """
 
-    def __init__(self, trans_penalty_swap=-2.5, trans_penalty_dead=-1.0, boost_factor=1.8):
+    def __init__(self, trans_penalty_swap=-2.5, trans_penalty_dead=-1.0, trans_penalty_dead_to_live=-0.3, boost_factor=1.8):
         self.trans_penalty_swap = float(trans_penalty_swap)
         self.trans_penalty_dead = float(trans_penalty_dead)
+        self.trans_penalty_dead_to_live = float(trans_penalty_dead_to_live)
         self.boost_factor = float(boost_factor)
         self.trans_matrix = self._build_transition_matrix()
 
@@ -33,11 +35,13 @@ class ViterbiSequenceDecoder:
         T[H, A] = self.trans_penalty_swap
         T[A, H] = self.trans_penalty_swap
 
-        # Moderate penalty for transitioning to/from Dead Ball
+        # Asymmetric penalty for Dead Ball:
+        # Live -> Dead has standard stoppage penalty (-1.0)
+        # Dead -> Live has lower restart barrier (-0.3)
         T[H, D] = self.trans_penalty_dead
-        T[D, H] = self.trans_penalty_dead
         T[A, D] = self.trans_penalty_dead
-        T[D, A] = self.trans_penalty_dead
+        T[D, H] = self.trans_penalty_dead_to_live
+        T[D, A] = self.trans_penalty_dead_to_live
 
         # Transitions involving Unknown X
         T[H, X] = -3.0
@@ -96,8 +100,10 @@ class ViterbiSequenceDecoder:
         row_sums = np.sum(adjusted, axis=1, keepdims=True) + 1e-9
         return adjusted / row_sums
 
-    def decode(self, probs, smart_tag_events=None):
-        """Globally optimal Viterbi decoding over frame emissions."""
+    def decode(self, probs, smart_tag_events=None, dH=None, dA=None):
+        """Globally optimal Viterbi decoding over frame emissions.
+        Supports time-varying proximity-adaptive turnover transitions if dH and dA are provided.
+        """
         N = len(probs)
         if N == 0:
             return np.empty(0, dtype=object)
@@ -115,11 +121,28 @@ class ViterbiSequenceDecoder:
         # Initial state (uniform prior)
         viterbi[0] = log_emissions[0]
 
+        has_dynamic = (dH is not None and dA is not None)
+        if has_dynamic:
+            # Precompute proximity-adaptive turnover barriers:
+            # T_t(H -> A) = -2.5 * sigmoid((dA - 1.5)/0.5)
+            # T_t(A -> H) = -2.5 * sigmoid((dH - 1.5)/0.5)
+            dH_clean = np.nan_to_num(dH, nan=10.0)
+            dA_clean = np.nan_to_num(dA, nan=10.0)
+            sig_dA = 1.0 / (1.0 + np.exp(-np.clip((dA_clean - 1.5) / 0.5, -10.0, 10.0)))
+            sig_dH = 1.0 / (1.0 + np.exp(-np.clip((dH_clean - 1.5) / 0.5, -10.0, 10.0)))
+            T_HA = self.trans_penalty_swap * sig_dA
+            T_AH = self.trans_penalty_swap * sig_dH
+
         # Forward pass
         cols = np.arange(4)
         for t in range(1, N):
-            # viterbi[t-1]: (4,), T: (4, 4) -> broadcast (4, 4)
-            trans_scores = viterbi[t - 1, :, None] + T
+            if has_dynamic:
+                T_curr = T.copy()
+                T_curr[H, A] = T_HA[t]
+                T_curr[A, H] = T_AH[t]
+                trans_scores = viterbi[t - 1, :, None] + T_curr
+            else:
+                trans_scores = viterbi[t - 1, :, None] + T
             backpointer[t] = np.argmax(trans_scores, axis=0)
             viterbi[t] = trans_scores[backpointer[t], cols] + log_emissions[t]
 
@@ -132,4 +155,3 @@ class ViterbiSequenceDecoder:
 
         label_map = np.array(["H", "A", "D", "X"], dtype="<U1")
         return label_map[best_path]
-
