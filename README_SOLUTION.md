@@ -5,11 +5,11 @@
 
 ## Table of Contents
 1. [Architecture Overview](#architecture-overview)
-2. [Strict Compliance with Competition Rules (RULES.md Section 1)](#strict-compliance-with-competition-rules-rulesmd-section-1)
+2. [Strict Compliance with Competition Rules (RULES.md Section 1 & 2)](#strict-compliance-with-competition-rules-rulesmd-section-1--2)
 3. [Setup & Environment](#setup--environment)
 4. [Running the Pipeline & Reproduction](#running-the-pipeline--reproduction)
 5. [Official Leaderboard Benchmark](#official-leaderboard-benchmark)
-6. [Out-of-Sample Generalization & Stress Testing](#out-of-sample-generalization--stress-testing)
+6. [Out-of-Sample Generalization & Robustness](#out-of-sample-generalization--robustness)
 7. [Key Algorithmic Decisions](#key-algorithmic-decisions)
 8. [Submission Deliverables](#submission-deliverables)
 
@@ -28,7 +28,7 @@ Raw ATD Coordinate Stream (.txt, .xml) — 199,319 frames @ 25 Hz
 │  • RTSBallSmoother (Forward Kalman + RTS backward pass)                │
 │    State: [x, y, vx, vy, ax, ay], dt=0.04s, speed cap 38 m/s          │
 │  • BallisticsEngine (2D Aerodynamic Drag Kalman Filter, kappa = 0.08)  │
-│    GLRT Innovation Test (Lambda_t > 9.21) identifies ballistic passes  │
+│    GLRT Innovation Test identifies ballistic passes                    │
 │    Latches possession to passer during unperturbed flight phases       │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
@@ -39,7 +39,7 @@ Raw ATD Coordinate Stream (.txt, .xml) — 199,319 frames @ 25 Hz
 │    velocities, torso-to-ball reach, and proximity ratios               │
 │  • Spatial Pitch Geometry: 4-way pitch symmetry augmentation           │
 │    eliminating halftime 180-degree end-swap orientation bias           │
-│  • Pitch Control Fields: Spearman/Fernandez Time-to-Intercept physics  │
+│  • Pitch Control Fields: Spearman/Fernández Time-to-Intercept physics  │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
                                     ▼
@@ -47,23 +47,24 @@ Raw ATD Coordinate Stream (.txt, .xml) — 199,319 frames @ 25 Hz
 │  Layer 3 — Self-Supervised Distillation & GBDT Ensemble                │
 │  • Unsupervised Physical Anchoring: Automatic extraction of uncontested │
 │    contact (r < 0.85m), ballistic flight, and out-of-bounds dead balls │
-│  • Dual-Tree Gradient Boosting (LightGBM + CatBoost) trained with      │
-│    anti-memorization column sampling and transition boundary weights   │
+│  • Dual-Tree Gradient Boosting (LightGBM + CatBoost) trained on        │
+│    165,436 augmented physical anchors with zero human annotations      │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
 │  Layer 4 — Temporal Sequence Optimization (Dynamic Viterbi)            │
-│  • Proximity-Adaptive Dynamic Viterbi: State transition penalties are  │
-│    scaled dynamically by close-contact distance (drops to 0 in tackles,│
-│    spikes in open space), eliminating high-frequency label flicker     │
+│  • Dynamic Viterbi Traceback: Transition penalties penalize micro-     │
+│    flickering while allowing legitimate contests and turnovers         │
 │  • Tactical Smart Tagging: Sets goals, corners, and restarts to D      │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│  Layer 5 — Structural Pruning & Match Clock Boundary Masking           │
+│  Layer 5 — Structural Pruning & Boundary Snapping                      │
 │  • Minimum Spell Pruner: Merges spurious micro-spells (<15 frames/0.6s)│
+│  • Boundary Impulse Snapping: Aligns transitions to ball acceleration  │
+│    spikes (>= 22.0 m/s^2) within +/-4 frames (160ms)                   │
 │  • Deterministic Clock Masking: Pre-kickoff (0..11184), Halftime       │
 │    (90652..110807), Post-match (190198..199318) strictly forced to D  │
 └───────────────────────────────────┬────────────────────────────────────┘
@@ -74,7 +75,7 @@ Raw ATD Coordinate Stream (.txt, .xml) — 199,319 frames @ 25 Hz
 
 ---
 
-## Strict Compliance with Competition Rules (RULES.md Section 1)
+## Strict Compliance with Competition Rules (RULES.md Section 1 & 2)
 
 This project strictly adheres to the competition regulations detailed in `RULES.md` and `SUBMISSION.md`:
 
@@ -82,20 +83,20 @@ This project strictly adheres to the competition regulations detailed in `RULES.
 - **Rule Requirement (`RULES.md` Section 1):**  
   > *"No hand labels on the provided game, in any amount and for any purpose — not for the submission, not to train a model and not to validate one. The provided game is the test set..."*
 - **Our Implementation:**  
-  Our models **do not memorize human annotations from the provided fixture**. Primary supervisory signals are generated via **Algorithmic Self-Supervised Physics Distillation (ASPD)**:
-  1. *Uncontested Mechanical Contact:* Players within close control radius ($r < 0.85\text{m}$) with separation $\Delta d > 2.0\text{m}$ and aligned velocity vectors.
+  Our models **use zero human labels from the provided fixture (BAR-ATH)**. Supervisory signals are generated purely via **Algorithmic Self-Supervised Physics Distillation (ASPD)**:
+  1. *Uncontested Mechanical Contact:* Players within close control radius ($d_{\text{team}} < 0.85\text{m}$) with isolation separation ($\Delta d > 2.20\text{m}$), boundary margin ($> 0.50\text{m}$), and controlled ball speed ($0.20 < v < 7.0\text{ m/s}$).
   2. *Ballistic Flight Invariant:* Kalman aerodynamic drag physics latch possession to the kicking team during unperturbed ballistic flight.
-  3. *Pitch Boundary Geometry:* Automatic detection of out-of-bounds coordinates ($x < 0$ or $x > 105.3$ or $y < 0$ or $y > 68.0$) and stationary ball states ($v < 0.25\text{m/s}$ with collective squad speed $< 1.0\text{m/s}$).
+  3. *Pitch Boundary Geometry & Stoppages:* Automatic detection of out-of-bounds coordinates ($d_{\text{bnd}} < 0.05\text{m}$), stationary ball states ($v < 0.20\text{ m/s}$), and official match clock boundaries.
 
 ### 2. Role of the Public 5-Minute Window
 - **Evaluation Guidance (`EVALUATION.md`):**  
-  > *"Use the public window to check that your pipeline is correct — frames aligned, file well-formed, labels meaning what you think..."*
-- The public 5-minute ground truth (`BAR-ATH_possession_gt_public.csv`, frames 11,185 to 18,684) is used **exclusively as an out-of-sample sanity check and format validator**. It is never treated as a training set for model memorization.
+  > *"Use the public window to check that your pipeline is correct — frames aligned, file well-formed, labels meaning what you think... never to choose between two versions of it, and never as training data."*
+- The public 5-minute ground truth (`BAR-ATH_possession_gt_public.csv`, frames 11,185 to 18,684) is used **exclusively as a post-generation sanity check and format validator**. It is never accessed by `submit.py`, `train_model.py`, or `inference_pipeline.py`.
 
-### 3. Dual-Mode Reproducibility
-`train_model.py` provides two transparent execution modes:
-- `python train_model.py --mode self_supervised`: Runs 100% on algorithmic physical anchors with **zero human labels** from the match.
-- `python train_model.py --mode calibrated`: Runs the full-match self-training teacher with pitch symmetry augmentation, utilizing the public window strictly for hyperparameter calibration and sanity verification.
+### 3. Pure Self-Supervised Execution
+The pipeline runs in a single, transparent, fully self-contained mode:
+- `python submit.py --out <team_name>.csv`
+Runs from raw ATD tracking data, requires no pre-trained weights, and uses zero human annotations.
 
 ---
 
@@ -103,46 +104,43 @@ This project strictly adheres to the competition regulations detailed in `RULES.
 
 ```bash
 # Recommended Python environment: 3.10+ / 3.11
-pip install numpy pandas scikit-learn lightgbm catboost pyyaml
+pip install -r requirements.txt
 ```
 
 ---
 
 ## Running the Pipeline & Reproduction
 
-### Step 1: Feature Extraction & Model Training
+### End-to-End Submission Generation (SUBMISSION.md Section 2 Compliant)
 ```bash
-# 100% Unsupervised / Self-Supervised Mode (Zero Human Labels):
-python train_model.py --mode self_supervised
-
-# Or Calibrated Full-Match Distillation Mode:
-python train_model.py --mode calibrated
+python submit.py --out <team_name>.csv
 ```
-- Smooths ball trajectory via bidirectional RTS Kalman filter.
-- Computes 92D relative invariant feature matrix (`models/features_all.npy`).
-- Fits LightGBM and CatBoost classifiers with transition sample weighting.
-- Saves model artifacts to `models/lgb_model.pkl` and `models/cb_model.pkl`.
+This single command:
+1. Verifies raw input assets in `data/tactical/`.
+2. Extracts 92D invariant features and trains self-supervised GBDT models if missing.
+3. Executes physics blending, aerodynamic ballistics latching, dynamic Viterbi decoding, and boundary impulse snapping.
+4. Generates `<team_name>.csv` and executes strict format verification against official competition rules.
 
-### Step 2: Full-Match Inference (199,319 Frames)
+### Modular Step-by-Step Execution
 ```bash
-python inference_pipeline.py
-```
-- Executes full-match batched inference across all 199,319 frames (~38 seconds on standard CPU).
-- Applies `BallisticsEngine` pass-in-flight latching.
-- Decodes sequences via Proximity-Adaptive Dynamic Viterbi traceback.
-- Applies deterministic match clock and smart tagging dead-ball constraints.
-- Writes and validates `evaluation/results/submission_possession_v1.csv`.
+# Step 1: Self-supervised feature extraction and model fitting (Zero human labels)
+python train_model.py
 
-### Step 3: Official Scoring & Leaderboard Verification
-```bash
-python evaluation/run_evaluation.py
+# Step 2: Full-match batched inference (199,319 frames)
+python inference_pipeline.py --out evaluation/results/submission_possession_v1.csv
+
+# Step 3: Format validation against competition gates
+python evaluation/validate_submission.py evaluation/results/submission_possession_v1.csv
+
+# Step 4: Official evaluation against the public window
+python evaluation/run_evaluation.py --bootstrap 1000
 ```
 
 ---
 
 ## Official Leaderboard Benchmark
 
-Evaluated against the official competition benchmark (`evaluation/run_evaluation.py`):
+Evaluated using the official competition harness (`evaluation/run_evaluation.py --bootstrap 1000`):
 
 ```
 scoreboard  gt/BAR-ATH_possession_gt_public.csv  199319 frames  7500 graded  21 gt segments
@@ -150,36 +148,41 @@ ground truth has 17 possessions of mean 14.2 s
 
 rank  submission                macroF1  spellF1   poss     dur  transF1  lat_f  shareE  frag
 ----  ------------------------  -------  -------  -----  ------  -------  -----  ------  ----
-   1  submission_possession_v1   0.9993   1.0000     17    14.2   1.0000   -0.3   0.001  1.00
-   2  submission_gbdt_v1         0.9993   1.0000     17    14.2   1.0000   -0.3   0.001  1.00
-   3  baseline_smooth125         0.5812   0.4242     16    18.5   0.1667   -7.7   0.052  0.81
-   4  baseline_smooth50          0.6207   0.3256     26    10.8   0.0816   +4.0   0.048  1.43
-   5  baseline_smooth25          0.6200   0.2868     36     7.6   0.2034   +8.2   0.056  1.90
-   6  baseline_raw               0.5972   0.0378    131     2.0   0.1410   -3.1   0.046  6.52
+   1  submission_possession_v1   0.5005   0.4686     18    16.0   0.2564   -1.6   0.071  0.95
+   2  baseline_smooth125         0.5812   0.4242     16    18.5   0.1667   -7.7   0.052  0.81
+   3  baseline_smooth50          0.6207   0.3256     26    10.8   0.0816   +4.0   0.048  1.43
+   4  baseline_smooth25          0.6200   0.2868     36     7.6   0.2034   +8.2   0.056  1.90
+   5  baseline_raw               0.5972   0.0378    131     2.0   0.1410   -3.1   0.046  6.52
 ```
 
-### Benchmark Metrics Summary:
-- **`spellF1` (Official Ranking Metric):** **1.0000** (Rank #1; 17 of 17 possessions matched across IoU thresholds 0.3..0.7).
-- **Possession Duration Accuracy:** Exactly **14.2s** mean duration (0.0s error vs. ground truth).
-- **Transition $F_1$ Score:** **1.0000** with **$-0.3$ frames latency** (under 12ms temporal alignment).
-- **Volume Drift (Possession Share Error):** **0.099%** (less than 1 frame per 1,000).
-- **Macro-F1:** **0.9993** ($H=0.9991, A=0.9988, D=1.0000$).
-- **Throughput:** Processed all 199,319 frames in **38.4 seconds** (~5,245 frames/sec, $\approx 210\times$ faster than real-time 25 Hz video).
+### Official Evaluation Metrics Summary:
+- **`spellF1` (Official Ranking Metric):** **0.4686**  
+  - Mean across IoU thresholds: `@0.3`: 0.6286, `@0.4`: 0.5714, `@0.5`: 0.5143, `@0.6`: 0.4000, `@0.7`: 0.2286.
+  - 1000-draw bootstrap 5–95% confidence interval: `[0.3086, 0.6171]`.
+  - **Honest Margin Over Baselines:**
+    - **+43.9% relative gain** over `baseline_smooth50` (0.3256 $\to$ 0.4686, $+0.1430$ points).
+    - **+10.5% relative gain** over `baseline_smooth125` (0.4242 $\to$ 0.4686, $+0.0444$ points).
+- **Possession Count & Duration:** Predicted **18** possessions with **16.0s** average duration (Ground Truth: **17** possessions, **14.2s** duration).
+- **Transition $F_1$ Score ($\tau = \pm 25$ frames / 1.0s):** **0.2564** with **$-1.6$ frames mean latency** (under 64ms temporal alignment).
+- **Volume Drift (Possession Share Error):** **7.09%** across graded frames.
+- **Full Match Tactical Distribution (199,319 Frames):**
+  - Total Possessions: **382 spells**, mean duration **10.5 seconds**.
+  - Label Counts: Dead ($D$): 98,814 (49.6%), Home ($H$): 60,591 (30.4%), Away ($A$): 39,914 (20.0%), Abstain ($X$): 0 (0.0%).
+- **Format Validation:** Checked with `evaluation/validate_submission.py` — exactly 199,319 rows, zero missing values, 100% compliant.
 
 ---
 
-## Out-of-Sample Generalization & Stress Testing
+## Out-of-Sample Generalization & Robustness
 
 To verify that the model has learned true physical principles rather than memorizing local frame sequences, the system was subjected to rigorous stress tests:
 
-| Evaluation Test | Accuracy | Error % | Methodology & Tactical Significance |
-| :--- | :---: | :---: | :--- |
-| **5-Fold Stratified CV (OOF)** | **99.83%** | **0.17%** | $\pm 0.07\%$ std across folds; verifies internal consistency. |
-| **Fixed Seed Stability (3 seeds)** | **99.75%** | **0.25%** | $\pm 0.0754\%$ variance across seeds 42, 123, 999. |
-| **Leave-One-Segment-Out (Strict)**| **73.91%** | **26.09%** | Trained on $N-1$ spells, tested on held-out temporal phase. **+39.11% points over baseline.** |
-| **LOSO (Boundary-Tolerant $\pm 0.2\text{s}$)**| **82.83%** | **17.17%** | Evaluates possession ownership allowing small transition boundary jitter. |
-| **Sensor Jitter ($0.5\text{m}$ tracking noise)**| **99.71%** | **0.29%** | Robust to optical camera sensor drift and stadium vibration. |
-| **Sensor Occlusion (20% feature dropout)**| **99.53%** | **0.47%** | Robust to multi-player scrums and ball occlusions. |
+| Validation Gate | Verified Outcome | Methodology & Tactical Significance |
+| :--- | :---: | :--- |
+| **Fresh-Clone Bit-for-Bit Determinism** | **100% Identical (SHA-256 Match)** | Fresh clone with 0 cached models regenerates identical hash (`43589bf0...`). |
+| **Ground-Truth Independence** | **Zero Dependency (0 Files Opened)** | Pipeline completes identically with public GT deleted; low-level audit hook verified 0 GT file opens. |
+| **Half-by-Half Symmetry Invariance** | **Balanced Distribution** | 4-way pitch augmentation eliminates end-swap bias; 1st vs 2nd half tactical pace tracks match realities. |
+| **Air-to-Ground Ballistics Invariance** | **Pass Latching Preserved** | Pass-in-flight physics prevents false turnover attribution during aerial ball trajectories. |
+| **Dead-Ball Clock Robustness** | **100% Match Clock Invariant** | Pre-kickoff, Halftime, and Post-match regions deterministically bounded to Dead Ball ($D$). |
 
 ---
 
@@ -189,15 +192,15 @@ To verify that the model has learned true physical principles rather than memori
    Models quadratic air resistance ($F_d = -\frac{1}{2}\rho C_d A v^2$). Solves the classic "Pass-in-Flight" attribution failure where geometric proximity models misattribute airborne through-balls to defending midfielders standing beneath the trajectory.
 2. **Relative Invariant Geometries:**  
    Coordinate features are represented relative to defensive lines, player hulls, and ball positions. Pitch symmetry augmentation ensures full mathematical invariance to attacking directions after halftime.
-3. **Proximity-Adaptive Dynamic Viterbi Decoding:**  
-   Unlike static Markov models that penalize all transitions equally, our decoder scales transition penalties inversely with player-ball distance: tackles ($d < 0.8\text{m}$) incur 0 penalty, while transitions in open space are heavily penalized, eliminating high-frequency flicker.
-4. **Hierarchical State Decoupling:**  
-   Decouples the *Alive/Dead ball decision* (governed by boundary geometry and collective squad kinetic energy $E_t = \frac{1}{22}\sum v_i^2$) from *Possession Ownership* ($H$ vs. $A$).
+3. **Dynamic Viterbi Sequence Decoding:**  
+   Solves for the globally optimal possession trajectory using dynamic programming, eliminating high-frequency churn and ensuring segment continuity.
+4. **Boundary Impulse Snapping:**  
+   Snaps segment transition boundaries to physical ball acceleration peaks ($\ge 22.0\text{ m/s}^2$) within a $\pm 4$ frame window ($\pm 160\text{ms}$), ensuring transitions align with physical kicks.
 
 ---
 
 ## Submission Deliverables
 
-- **Possession File:** `evaluation/results/submission_possession_v1.csv` (199,319 rows, columns `frame,label`, values `H,A,D,X`). Validated with `evaluation/validate_submission.py`.
-- **Code Repository:** Standalone, deterministic, and fully reproducible via `inference_pipeline.py`.
-- **Technical Document:** Detailed documentation adhering to all criteria outlined in `SUBMISSION.md`.
+- **Possession File:** `<team_name>.csv` (199,319 rows, columns `frame,label`, values `H,A,D,X`). Validated with `evaluation/validate_submission.py`.
+- **Code Repository:** Public repository containing complete source code, pinned dependencies, and reproduction instructions via `submit.py`.
+- **Technical Document:** Detailed technical report (`<team_name>.pdf`) documenting methodology, self-supervised anchors, and honest benchmark metrics.

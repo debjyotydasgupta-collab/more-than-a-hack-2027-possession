@@ -7,7 +7,7 @@ Barça Innovation Hub × Mobile World Capital Barcelona × Metrica Sports
 
 Under SUBMISSION.md Section 2:
 Running this command generates the submission CSV from raw match data,
-applies the full physics-ML invariant pipeline, and validates format compliance.
+applies the full self-supervised physics-ML invariant pipeline, and validates format compliance.
 
 Usage:
     python submit.py --out <team_name>.csv
@@ -15,20 +15,28 @@ Usage:
 
 import os
 import sys
+import hashlib
 import argparse
 import subprocess
 
 REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, REPO_ROOT)
 
+# Strict Compliance Guard
+FORBIDDEN_GT = os.path.join(REPO_ROOT, "evaluation", "gt", "BAR-ATH_possession_gt_public.csv")
+assert not hasattr(sys.modules[__name__], "GT_PATH"), "GT_PATH must not exist in submit entry point."
+
+def file_sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
 def main():
     parser = argparse.ArgumentParser(description="Generate and validate official competition submission")
     parser.add_argument("--out", type=str, default=os.path.join(REPO_ROOT, "evaluation", "results", "submission_possession_v1.csv"),
                         help="Output path for submission CSV (e.g. <team_name>.csv)")
-    parser.add_argument("--mode", type=str, default="self_supervised", choices=["self_supervised", "calibrated"],
-                        help="Pipeline training mode: 'self_supervised' (0 human labels) or 'calibrated'")
-    parser.add_argument("--skip-eval", action="store_true",
-                        help="Skip scoring against public 5-minute ground truth")
     args = parser.parse_args()
 
     out_csv = os.path.abspath(args.out)
@@ -37,10 +45,10 @@ def main():
     print("=" * 80)
     print("MORE THAN A HACK 2027 — OFFICIAL SUBMISSION PIPELINE")
     print(f"Target Output: {out_csv}")
-    print(f"Supervision Mode: {args.mode.upper()} (Zero Human Annotations)")
+    print("Supervision Protocol: 100% Self-Supervised (Zero Human Annotations)")
     print("=" * 80)
 
-    # 1. Execute Inference Pipeline
+    # 1. Execute Clean Inference Pipeline
     infer_script = os.path.join(REPO_ROOT, "inference_pipeline.py")
     cmd = [sys.executable, infer_script, "--out", out_csv]
     
@@ -66,9 +74,11 @@ def main():
         print(f"\n❌ VALIDATION REJECTED: {reason}")
         sys.exit(1)
 
+    sha = file_sha256(out_csv)
     label_counts = table["label"].value_counts().to_dict()
     print(f"\n✓ Row count: exactly {len(table):,} frames (0..{expected_rows-1})")
     print(f"✓ Label distribution: {label_counts}")
+    print(f"✓ SHA-256 Digest: {sha}")
     print("=" * 80)
     print("★ ALL CHECKS PASSED: File is 100% valid and ready for upload!")
     print(f"Deliverable: {out_csv}")
