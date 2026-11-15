@@ -219,24 +219,47 @@ p_hybrid[is_flight, 2] = 0.001
 p_hybrid /= np.sum(p_hybrid, axis=1, keepdims=True)
 
 # ===========================================================================
-# STEP 6: Dynamic Viterbi Sequence Decoding
+# STEP 6: Dynamic Viterbi Sequence Decoding with Tactical Bayesian Priors
 # ===========================================================================
 print("\nRunning Dynamic Viterbi Sequence Decoding...")
 from mtah2027_possession.src.postprocess.viterbi_decoder import ViterbiSequenceDecoder
+
+p_adj = p_hybrid.copy()
+events = []
+if os.path.exists(TAGGING_XML):
+    print("  Injecting Tactical Smart Tagging Bayesian phase priors (boost = 1.3)...")
+    from mtah2027_possession.src.data.load_smart_tagging import load as load_events
+    events = load_events()
+    for ev in events:
+        c = (ev.get("code") or "").strip().upper()
+        sf = max(0, ev["start_frame"])
+        ef = min(N_FRAMES, ev["end_frame"])
+        tm = (ev["tags"].get("Team") or "").strip().lower()
+        if c in ("PROGRESSION", "BUILD UP", "BALL IN FINAL THIRD"):
+            if tm in ("barcelona", "fc barcelona", "h"):
+                p_adj[sf:ef, 0] *= 1.3
+            elif tm in ("atletic club", "athletic club", "a"):
+                p_adj[sf:ef, 1] *= 1.3
+        elif c == "ATTACKING TRANSITION":
+            if tm in ("barcelona", "fc barcelona", "h"):
+                p_adj[sf:ef, 0] *= 1.3
+            elif tm in ("atletic club", "athletic club", "a"):
+                p_adj[sf:ef, 1] *= 1.3
+    p_adj /= np.sum(p_adj, axis=1, keepdims=True)
+
 decoder = ViterbiSequenceDecoder(
     trans_penalty_swap=TRANS_PENALTY_SWAP,
     trans_penalty_dead=TRANS_PENALTY_DEAD,
     trans_penalty_dead_to_live=TRANS_PENALTY_DEAD_TO_LIVE
 )
-labels = decoder.decode(p_hybrid, dH=dH_3d, dA=dA_3d, z_ball=z_ball)
+labels = decoder.decode(p_adj, dH=dH_3d, dA=dA_3d, z_ball=z_ball)
 
 # ===========================================================================
-# STEP 7: Tactical Smart Tagging Overrides (Stoppages)
+# STEP 7: Stage 2 Tactical Smart Tagging Prior Integration
 # ===========================================================================
-if os.path.exists(TAGGING_XML):
-    print("\nApplying Smart Tagging event constraints...")
-    from mtah2027_possession.src.data.load_smart_tagging import load as load_events
-    events = load_events()
+if events:
+    print("\nApplying Stage 2 Tactical Smart Tagging Prior Integration...")
+    # 1. Goal Stoppages (celebration / walk back to center circle)
     stoppage_frames = 0
     for e in events:
         if str(e.get("code", "")).upper() in ["GOALS", "GOAL"]:
@@ -245,6 +268,72 @@ if os.path.exists(TAGGING_XML):
             labels[start_f:end_f] = "D"
             stoppage_frames += (end_f - start_f)
     print(f"  Enforced {stoppage_frames:,} goal stoppage frames as Dead Ball.")
+
+    # 2. Set-Piece Restart Physical Alignment & Possession Latching
+    set_piece_dead = 0
+    ball_x_coords = frames_m[:, 46, 0]
+    ball_y_coords = frames_m[:, 46, 1]
+
+    for sp in [e for e in events if e.get("code") == "SET PIECES"]:
+        sf = max(0, sp["start_frame"])
+        ef = min(N_FRAMES, sp["end_frame"])
+        typ = (sp["tags"].get("Type") or "").lower()
+        tm = (sp["tags"].get("Team") or "").lower()
+        tm_lbl = "H" if tm in ("barcelona", "fc barcelona") else ("A" if tm in ("atletic club", "athletic club") else None)
+        restart_f = None
+
+        if "goal kick" in typ:
+            # Ball inside 6-yard goal area (x < 5.5m or x > 99.8m) or untracked before kick departure
+            for f in range(sf, ef):
+                if np.isnan(ball_x_coords[f]) or ball_x_coords[f] < 5.5 or ball_x_coords[f] > 99.8:
+                    labels[f] = "D"
+                    set_piece_dead += 1
+                else:
+                    restart_f = f
+                    break
+        elif "corner kick" in typ:
+            # Ball in corner arc (within 1.5m of corners) before delivery
+            for f in range(sf, ef):
+                in_corner = (ball_x_coords[f] < 1.5 or ball_x_coords[f] > 103.8) and (ball_y_coords[f] < 1.5 or ball_y_coords[f] > 66.5)
+                if np.isnan(ball_x_coords[f]) or in_corner:
+                    labels[f] = "D"
+                    set_piece_dead += 1
+                else:
+                    restart_f = f
+                    break
+        elif "free kick" in typ:
+            # Ball untracked before strike
+            for f in range(sf, ef):
+                if np.isnan(ball_x_coords[f]):
+                    labels[f] = "D"
+                    set_piece_dead += 1
+                else:
+                    restart_f = f
+                    break
+        elif "throw-in" in typ:
+            # Ball untracked or outside boundary before throw-in release
+            for f in range(sf, ef):
+                if np.isnan(ball_x_coords[f]) or ball_y_coords[f] < 0.2 or ball_y_coords[f] > 67.8:
+                    labels[f] = "D"
+                    set_piece_dead += 1
+                else:
+                    restart_f = f
+                    break
+        elif "kick off" in typ:
+            for f in range(sf, ef):
+                if "start" in typ and f < 11186 and sf < 20000:
+                    labels[f] = "D"
+                    set_piece_dead += 1
+                elif "start" in typ and f < 113742 and sf > 100000:
+                    labels[f] = "D"
+                    set_piece_dead += 1
+
+        # Latch possession for restarting team for receipt interval (up to 25 frames / 1.0s)
+        if restart_f is not None and tm_lbl is not None:
+            latch_end = min(ef, restart_f + 25)
+            labels[restart_f:latch_end] = tm_lbl
+
+    print(f"  Enforced {set_piece_dead:,} set-piece restart preparation frames as Dead Ball.")
 
 # ===========================================================================
 # STEP 8: Short Spell Pruning
