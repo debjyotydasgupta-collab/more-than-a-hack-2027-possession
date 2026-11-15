@@ -142,6 +142,13 @@ class ViterbiSequenceDecoder:
                 T_HA[airborne] = min(self.trans_penalty_swap * 2.5, -6.0)
                 T_AH[airborne] = min(self.trans_penalty_swap * 2.5, -6.0)
 
+            # Stage 3: Tackle-Adaptive Dynamic Duel Transition
+            # When opposing players actively contest the ball (dH < 0.85m and dA < 0.85m),
+            # turnover resistance drops to 0.0 to enable instantaneous physical turnover snapping.
+            is_duel = (dH_clean < 0.85) & (dA_clean < 0.85)
+            T_HA[is_duel] = 0.0
+            T_AH[is_duel] = 0.0
+
         # Forward pass
         cols = np.arange(4)
         for t in range(1, N):

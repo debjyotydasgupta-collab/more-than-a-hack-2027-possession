@@ -54,16 +54,27 @@ class BoundaryImpulseSnapper:
         N = len(labels)
         snapped = labels.copy()
 
-        # Compute ball kinematics
+        # Compute ball kinematics with robust NaN handling (zero acceleration across missing frames)
+        valid_b = ~np.isnan(ball_xy[:, 0]) & ~np.isnan(ball_xy[:, 1])
+        bx_raw = np.nan_to_num(ball_xy[:, 0], nan=0.0)
+        by_raw = np.nan_to_num(ball_xy[:, 1], nan=0.0)
+        
+        v_ball_xy = np.zeros((N, 2), dtype=np.float64)
+        for i in range(1, N):
+            if valid_b[i] and valid_b[i - 1]:
+                v_ball_xy[i, 0] = (bx_raw[i] - bx_raw[i - 1]) / self.dt
+                v_ball_xy[i, 1] = (by_raw[i] - by_raw[i - 1]) / self.dt
+        v_ball = np.sqrt(v_ball_xy[:, 0]**2 + v_ball_xy[:, 1]**2)
+
+        a_ball = np.zeros(N, dtype=np.float64)
+        for i in range(1, N):
+            if valid_b[i] and valid_b[i - 1] and valid_b[i - 2]:
+                ax = (v_ball_xy[i, 0] - v_ball_xy[i - 1, 0]) / self.dt
+                ay = (v_ball_xy[i, 1] - v_ball_xy[i - 1, 1]) / self.dt
+                a_ball[i] = np.sqrt(ax**2 + ay**2)
+
         bx = np.nan_to_num(ball_xy[:, 0], nan=self.pitch_length / 2.0)
         by = np.nan_to_num(ball_xy[:, 1], nan=self.pitch_width / 2.0)
-        
-        diff_b = np.diff(np.column_stack([bx, by]), axis=0, prepend=np.column_stack([bx[[0]], by[[0]]]))
-        v_ball_xy = diff_b / self.dt
-        v_ball = np.sqrt(v_ball_xy[:, 0]**2 + v_ball_xy[:, 1]**2)
-        
-        diff_v = np.diff(v_ball_xy, axis=0, prepend=v_ball_xy[[0]])
-        a_ball = np.sqrt(diff_v[:, 0]**2 + diff_v[:, 1]**2) / self.dt
 
         # Compute nearest player distances
         H_mask = (team_of_track == 0)

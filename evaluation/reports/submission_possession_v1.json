@@ -1,7 +1,7 @@
 {
   "accuracy": 0.6918666666666666,
-  "alive_dead_f1": 0.9014595660749507,
-  "bootstrap_high": 0.7532028999180749,
+  "alive_dead_f1": 0.9013728893798327,
+  "bootstrap_high": 0.7531526626218754,
   "bootstrap_low": 0.45167018580511753,
   "bootstrap_n": 1000,
   "confusion": [
@@ -12,9 +12,9 @@
       0
     ],
     [
-      502,
+      501,
       1839,
-      236,
+      237,
       0
     ],
     [
@@ -24,9 +24,9 @@
       0
     ],
     [
-      49820,
-      31784,
-      110215,
+      49769,
+      31763,
+      110287,
       0
     ]
   ],
@@ -35,9 +35,9 @@
   "gt_home_share": 0.5727076770021555,
   "gt_home_share_spells": 0.5727076770021555,
   "gt_mean_spell_duration_s": 14.190588235294117,
-  "kappa": 0.4940295634446496,
-  "macro_f1": 0.6421526164601844,
-  "mean_spell_duration_s": 12.655238095238097,
+  "kappa": 0.4940588807750519,
+  "macro_f1": 0.642118960761406,
+  "mean_spell_duration_s": 12.653333333333332,
   "n_abstain_on_graded": 0,
   "n_frames": 199319,
   "n_graded": 7500,
@@ -53,21 +53,21 @@
       "support": 2577
     },
     "D": {
-      "f1": 0.46279569892473116,
-      "precision": 0.6285046728971962,
+      "f1": 0.46259673258813416,
+      "precision": 0.6277712952158693,
       "recall": 0.3662355343771273,
       "support": 1469
     },
     "H": {
-      "f1": 0.7423442449841606,
-      "precision": 0.6821931101407084,
+      "f1": 0.7424422442244225,
+      "precision": 0.6823586508129095,
       "recall": 0.814128546612623,
       "support": 3454
     }
   },
-  "pred_home_share": 0.6204093919325707,
+  "pred_home_share": 0.6203522504892368,
   "share_defined": true,
-  "share_err": 0.047701714930415196,
+  "share_err": 0.04764457348708129,
   "spell_bootstrap_high": 0.6631578947368421,
   "spell_bootstrap_low": 0.3684210526315789,
   "spell_count_error": 4,
@@ -121,7 +121,7 @@
     12,
     25
   ],
-  "team_acc_both_alive": 0.8141081743392263,
+  "team_acc_both_alive": 0.814250700280112,
   "team_acc_gt_alive": 0.7711822251699553,
   "transitions": {
     "12": {
@@ -141,8 +141,8 @@
     },
     "25": {
       "f1": 0.3111111111111111,
-      "mean_abs_latency": 8.714285714285714,
-      "mean_latency": -2.7142857142857144,
+      "mean_abs_latency": 8.571428571428571,
+      "mean_latency": -2.5714285714285716,
       "median_latency": -5.0,
       "n_ambiguous": 0,
       "n_gt": 20,
@@ -150,7 +150,7 @@
       "n_missed": 13,
       "n_pred": 25,
       "n_spurious": 18,
-      "p90_abs_latency": 15.200000000000001,
+      "p90_abs_latency": 14.600000000000001,
       "precision": 0.28,
       "recall": 0.35
     }
