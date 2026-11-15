@@ -70,8 +70,9 @@ DEAD_BALL_REGIONS = [
 ]
 
 # Physical and Biomechanical Constants:
-# - MIN_SPELL_FRAMES = 15: 0.60 seconds at 25 fps. Biomechanical minimum time for controlled two-touch receipt.
-MIN_SPELL_FRAMES = 15
+# - MIN_SPELL_FRAMES = 45: 1.80 seconds at 25 fps. Biomechanical minimum time for an established team possession spell.
+#   Prunes transient 50/50 deflections and micro-flickers while preserving true macro attacking sequences.
+MIN_SPELL_FRAMES = 45
 
 # - Viterbi Transition Penalties:
 #   Derived from average match pace (12s average possession = 300 frames; turnover prob ~ 0.00167/frame -> ln(0.00167) ~ -6.4).
@@ -402,12 +403,32 @@ labels[110808:113742] = "D"
 
 # 2. Metric Pitch Boundary Out-of-Bounds Enforcement (FIFA Standard: 105.3m x 68.0m)
 # Ball coordinates outside pitch lines are physically Dead Ball (D)
+# Enforce dead-ball persistence: once ball crosses boundary line, play remains DEAD (D)
+# until the ball is kicked back into the pitch (departure velocity > 4.5 m/s and dist > 2.0m).
 ball_x = frames_m[:, 46, 0]
 ball_y = frames_m[:, 46, 1]
 pitch_out_mask = (ball_x < -0.1) | (ball_x > 105.4) | (ball_y < -0.1) | (ball_y > 68.1)
 n_pitch_out = int(np.sum(pitch_out_mask))
-labels[pitch_out_mask] = "D"
-print(f"  Enforced {n_pitch_out:,} pitch out-of-bounds frames as Dead Ball.")
+
+in_oob_dead = False
+n_oob_persisted = 0
+for f in range(N_FRAMES):
+    if pitch_out_mask[f]:
+        in_oob_dead = True
+        labels[f] = "D"
+    elif in_oob_dead:
+        bx_f, by_f = ball_x[f], ball_y[f]
+        dist_in = min(bx_f, 105.3 - bx_f, by_f, 68.0 - by_f) if not (np.isnan(bx_f) or np.isnan(by_f)) else 0.0
+        # Check if ball has departed into live play
+        if v_ball[f] > 4.5 and dist_in > 2.0:
+            in_oob_dead = False
+        elif dist_in > 5.0 and v_ball[f] > 2.5:
+            in_oob_dead = False
+        else:
+            labels[f] = "D"
+            n_oob_persisted += 1
+
+print(f"  Enforced {n_pitch_out:,} pitch out-of-bounds frames + {n_oob_persisted:,} pre-restart setup frames as Dead Ball.")
 
 # 3. Dynamic Sideline Ball Tracking Loss Recovery
 # Detect when ball tracking is lost (NaN) adjacent to boundary lines (> 35 frames / 1.4s)

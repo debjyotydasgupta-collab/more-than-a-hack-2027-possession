@@ -1,158 +1,158 @@
 {
-  "accuracy": 0.772,
-  "alive_dead_f1": 0.9252198272507975,
+  "accuracy": 0.7622666666666666,
+  "alive_dead_f1": 0.9240753772773477,
   "bootstrap_high": null,
   "bootstrap_low": null,
   "bootstrap_n": 0,
   "confusion": [
     [
-      2985,
-      387,
+      2898,
+      474,
       82,
       0
     ],
     [
-      362,
-      2211,
-      4,
+      338,
+      2199,
+      40,
       0
     ],
     [
-      740,
-      135,
-      594,
+      725,
+      124,
+      620,
       0
     ],
     [
-      52250,
-      31924,
-      107645,
+      49723,
+      31301,
+      110795,
       0
     ]
   ],
-  "fragmentation": 1.1904761904761905,
+  "fragmentation": 0.9047619047619048,
   "ground_truth": "BAR-ATH_possession_gt_public.csv",
   "gt_home_share": 0.5727076770021555,
   "gt_home_share_spells": 0.5727076770021555,
   "gt_mean_spell_duration_s": 14.190588235294117,
-  "kappa": 0.6238080765898011,
-  "macro_f1": 0.7257519388372925,
-  "mean_spell_duration_s": 12.99047619047619,
+  "kappa": 0.6097994566167464,
+  "macro_f1": 0.7202919393777346,
+  "mean_spell_duration_s": 18.021333333333335,
   "n_abstain_on_graded": 0,
   "n_frames": 199319,
   "n_graded": 7500,
   "n_gt_segments": 21,
   "n_gt_spells": 17,
-  "n_pred_segments": 25,
-  "n_pred_spells": 21,
+  "n_pred_segments": 19,
+  "n_pred_spells": 15,
   "per_class": {
     "A": {
-      "f1": 0.8327683615819208,
-      "precision": 0.8090010976948409,
-      "recall": 0.8579743888242142,
+      "f1": 0.8183848157796799,
+      "precision": 0.7861994994637111,
+      "recall": 0.8533178114086146,
       "support": 2577
     },
     "D": {
-      "f1": 0.5528152629129828,
-      "precision": 0.8735294117647059,
-      "recall": 0.404356705241661,
+      "f1": 0.5608322026232474,
+      "precision": 0.8355795148247979,
+      "recall": 0.42205582028590877,
       "support": 1469
     },
     "H": {
-      "f1": 0.791672192016974,
-      "precision": 0.7303645705896746,
-      "recall": 0.8642154024319629,
+      "f1": 0.7816587997302764,
+      "precision": 0.7316334259025499,
+      "recall": 0.8390272148233932,
       "support": 3454
     }
   },
-  "pred_home_share": 0.599266862170088,
+  "pred_home_share": 0.5861201538916839,
   "share_defined": true,
-  "share_err": 0.02655918516793243,
+  "share_err": 0.013412476889528402,
   "spell_bootstrap_high": null,
   "spell_bootstrap_low": null,
-  "spell_count_error": 4,
+  "spell_count_error": -2,
   "spell_f1": {
     "0.3": {
-      "f1": 0.6315789473684211,
-      "n_matched": 12,
-      "n_missed": 5,
-      "n_spurious": 9,
-      "precision": 0.5714285714285714,
-      "recall": 0.7058823529411765
+      "f1": 0.6875,
+      "n_matched": 11,
+      "n_missed": 6,
+      "n_spurious": 4,
+      "precision": 0.7333333333333333,
+      "recall": 0.6470588235294118
     },
     "0.4": {
-      "f1": 0.6315789473684211,
-      "n_matched": 12,
-      "n_missed": 5,
-      "n_spurious": 9,
-      "precision": 0.5714285714285714,
-      "recall": 0.7058823529411765
+      "f1": 0.6875,
+      "n_matched": 11,
+      "n_missed": 6,
+      "n_spurious": 4,
+      "precision": 0.7333333333333333,
+      "recall": 0.6470588235294118
     },
     "0.5": {
-      "f1": 0.6315789473684211,
-      "n_matched": 12,
-      "n_missed": 5,
-      "n_spurious": 9,
-      "precision": 0.5714285714285714,
-      "recall": 0.7058823529411765
+      "f1": 0.625,
+      "n_matched": 10,
+      "n_missed": 7,
+      "n_spurious": 5,
+      "precision": 0.6666666666666666,
+      "recall": 0.5882352941176471
     },
     "0.6": {
-      "f1": 0.4736842105263158,
-      "n_matched": 9,
-      "n_missed": 8,
-      "n_spurious": 12,
-      "precision": 0.42857142857142855,
-      "recall": 0.5294117647058824
+      "f1": 0.43749999999999994,
+      "n_matched": 7,
+      "n_missed": 10,
+      "n_spurious": 8,
+      "precision": 0.4666666666666667,
+      "recall": 0.4117647058823529
     },
     "0.7": {
-      "f1": 0.4736842105263158,
-      "n_matched": 9,
-      "n_missed": 8,
-      "n_spurious": 12,
-      "precision": 0.42857142857142855,
-      "recall": 0.5294117647058824
+      "f1": 0.43749999999999994,
+      "n_matched": 7,
+      "n_missed": 10,
+      "n_spurious": 8,
+      "precision": 0.4666666666666667,
+      "recall": 0.4117647058823529
     }
   },
-  "spell_f1_at_headline": 0.6315789473684211,
-  "spell_f1_mean": 0.568421052631579,
+  "spell_f1_at_headline": 0.625,
+  "spell_f1_mean": 0.575,
   "spell_iou_headline": 0.5,
   "submission": "submission_possession_v1",
   "taus": [
     12,
     25
   ],
-  "team_acc_both_alive": 0.8740117746005046,
-  "team_acc_gt_alive": 0.8615486652296468,
+  "team_acc_both_alive": 0.8625825012692503,
+  "team_acc_gt_alive": 0.8451334770353175,
   "transitions": {
     "12": {
-      "f1": 0.1818181818181818,
-      "mean_abs_latency": 7.5,
-      "mean_latency": -2.0,
+      "f1": 0.15789473684210525,
+      "mean_abs_latency": 6.666666666666667,
+      "mean_latency": 1.3333333333333333,
+      "median_latency": -2.0,
+      "n_ambiguous": 0,
+      "n_gt": 20,
+      "n_matched": 3,
+      "n_missed": 17,
+      "n_pred": 18,
+      "n_spurious": 15,
+      "p90_abs_latency": 10.8,
+      "precision": 0.16666666666666666,
+      "recall": 0.15
+    },
+    "25": {
+      "f1": 0.2105263157894737,
+      "mean_abs_latency": 9.75,
+      "mean_latency": -3.75,
       "median_latency": -4.0,
       "n_ambiguous": 0,
       "n_gt": 20,
       "n_matched": 4,
       "n_missed": 16,
-      "n_pred": 24,
-      "n_spurious": 20,
-      "p90_abs_latency": 11.0,
-      "precision": 0.16666666666666666,
+      "n_pred": 18,
+      "n_spurious": 14,
+      "p90_abs_latency": 16.900000000000002,
+      "precision": 0.2222222222222222,
       "recall": 0.2
-    },
-    "25": {
-      "f1": 0.2727272727272727,
-      "mean_abs_latency": 10.333333333333334,
-      "mean_latency": -6.666666666666667,
-      "median_latency": -8.5,
-      "n_ambiguous": 0,
-      "n_gt": 20,
-      "n_matched": 6,
-      "n_missed": 14,
-      "n_pred": 24,
-      "n_spurious": 18,
-      "p90_abs_latency": 16.0,
-      "precision": 0.25,
-      "recall": 0.3
     }
   }
 }

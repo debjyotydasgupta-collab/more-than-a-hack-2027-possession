@@ -84,7 +84,7 @@ Scored using the official competition harness `evaluation/run_evaluation.py --bo
 ```
 rank  submission                macroF1  spellF1   poss     dur  transF1  lat_f  shareE  frag
 ----  ------------------------  -------  -------  -----  ------  -------  -----  ------  ----
-   1  submission_possession_v1   0.7258   0.5684     21    13.0   0.2727   -6.7   0.027  1.19
+   1  submission_possession_v1   0.7203   0.5750     15    18.0   0.2105   -3.8   0.013  0.90
    2  baseline_smooth125         0.5812   0.4242     16    18.5   0.1667   -7.7   0.052  0.81
    3  baseline_smooth50          0.6207   0.3256     26    10.8   0.0816   +4.0   0.048  1.43
    4  baseline_smooth25          0.6200   0.2868     36     7.6   0.2034   +8.2   0.056  1.90
@@ -92,29 +92,28 @@ rank  submission                macroF1  spellF1   poss     dur  transF1  lat_f 
 ```
 
 ### Official Evaluation Metrics Breakdown:
-- **`macroF1` (Crossed > 0.70 Milestone):** **0.7258**
+- **`macroF1` (Crossed > 0.70 Milestone):** **0.7203**
   - Per-class breakdown:
-    - Home ($H$): Precision: 0.7304 | Recall: 0.8642 | **F1: 0.7917** (Support: 3,454 frames)
-    - Away ($A$): Precision: 0.8090 | Recall: 0.8580 | **F1: 0.8328** (Support: 2,577 frames)
-    - Dead Ball ($D$): Precision: 0.8735 | Recall: 0.4044 | **F1: 0.5528** (Support: 1,469 frames, **+277% lift** from baseline 0.1464)
-- **`spellF1` (Official Ranking Metric):** **0.5684** (Mean across IoU 0.3..0.7)
-  - **Headline $\text{spellF1}$ (@ IoU=0.5):** **0.6316** (12 of 17 ground truth possessions matched!)
-  - High-precision $\text{spellF1}$ (@ IoU=0.7): **0.4737** (Almost 2x `baseline_smooth125` at 0.2424)
-  - IoU Spectrum: `@0.3`: 0.6316, `@0.4`: 0.6316, `@0.5`: 0.6316, `@0.6`: 0.4737, `@0.7`: 0.4737.
+    - Home ($H$): Precision: 0.7316 | Recall: 0.8390 | **F1: 0.7817** (Support: 3,454 frames)
+    - Away ($A$): Precision: 0.7862 | Recall: 0.8533 | **F1: 0.8184** (Support: 2,577 frames)
+    - Dead Ball ($D$): Precision: 0.8356 | Recall: 0.4221 | **F1: 0.5608** (Support: 1,469 frames, **+283% lift** from baseline 0.1464)
+- **`spellF1` (Official Ranking Metric):** **0.5750** (Mean across IoU 0.3..0.7)
+  - **Headline $\text{spellF1}$ (@ IoU=0.5):** **0.6250**
+  - IoU Spectrum: `@0.3`: 0.6875, `@0.4`: 0.6875, `@0.5`: 0.6250, `@0.6`: 0.4375, `@0.7`: 0.4375.
   - **Margin over Organizers' Benchmark:**
-    - **+133.6% relative lift** over published floor `baseline_smooth50` (0.2433 $\to$ 0.5684).
-    - **+34.0% relative lift** over `baseline_smooth125` (0.4242 $\to$ 0.5684).
+    - **+136.3% relative lift** over published floor `baseline_smooth50` (0.2433 $\to$ 0.5750).
+    - **+35.5% relative lift** over `baseline_smooth125` (0.4242 $\to$ 0.5750).
 - **Per-Frame Accuracy & Reliability:**
-  - Overall Accuracy: **77.20%** across 199,319 frames (0 abstained frames on graded intervals).
-  - Alive/Dead $F_1$: **0.9252** (Hackathon-leading reliability).
-  - Cohen's Kappa ($\kappa$): **0.6238** (Substantial categorical agreement).
-  - Team Accuracy on Alive Frames: **87.40%**.
+  - Overall Accuracy: **76.23%** across 199,319 frames (0 abstained frames on graded intervals).
+  - Alive/Dead $F_1$: **0.9241** (Competition-leading reliability).
+  - Cohen's Kappa ($\kappa$): **0.6098** (Substantial categorical agreement).
+  - Team Accuracy on Alive Frames: **86.26%**.
 - **Possession Count, Duration & Continuity:**
-  - Predicted **21** possessions with **13.0s** average duration (Ground Truth: **17** possessions, **14.2s** duration).
-  - Home Possession Share: **59.93%** vs GT **57.27%** (Share Error: **0.0266** / 2.66%).
-  - Fragmentation Ratio: **1.19** (Optimal structural continuity vs 6.52 raw baseline).
-  - Mean Transition Latency: **-6.7 frames** (0.27s anticipatory physical reaction).
-- **File Integrity:** Verified by `evaluation/possession_metrics.py` — exactly 199,319 rows, monotonic `0..199318`, legal alphabet $\{H, A, D, X\}$, SHA-256: `f04b617908e7afca651375c8d0f2544305d4c454238a7fd0257f2d56e81fcf65`.
+  - Predicted **15** possessions with **18.0s** average duration (Ground Truth: **17** possessions, **14.2s** duration).
+  - Home Possession Share: **58.61%** vs GT **57.27%** (Share Error: **0.0134** / 1.34%).
+  - Fragmentation Ratio: **0.90** (Optimal structural continuity vs 6.52 raw baseline).
+  - Mean Transition Latency: **-3.8 frames** (0.15s centered reaction).
+- **File Integrity:** Verified by `evaluation/possession_metrics.py` — exactly 199,319 rows, monotonic `0..199318`, legal alphabet $\{H, A, D, X\}$, SHA-256: `aa1a2a6d445e025ecb4ca588dea1646dcce066ab9de26ff9c8d05414147db57a`.
 
 ---
 
