@@ -259,13 +259,15 @@ labels = pruner.prune_short_spells(labels)
 # ===========================================================================
 print("\nSnapping boundaries to physical ball acceleration impulses...")
 from mtah2027_possession.src.postprocess.boundary_snapper import BoundaryImpulseSnapper
-snapper = BoundaryImpulseSnapper(dt=0.04, search_window=4, accel_thresh=22.0)
+snapper = BoundaryImpulseSnapper(dt=0.04, search_window=8, accel_thresh=18.0)
 labels = snapper.snap_boundaries(labels, frames_m[:, 46, :2], frames_m[:, :46, :2], team_of_track)
 
 # ===========================================================================
-# STEP 10: Match Clock Dead-Ball Enforcement
+# STEP 10: Stage 1 Multi-Modal Dead-Ball Detection Engine
 # ===========================================================================
-print("\nEnforcing match clock boundaries (Official Dead Ball periods)...")
+print("\nApplying Stage 1 Multi-Modal Dead-Ball Detection Engine...")
+
+# 1. Official match clock dead ball periods (halftime, pre/post match)
 for s, e in DEAD_BALL_REGIONS:
     s = max(0, s)
     e = min(N_FRAMES - 1, e)
@@ -273,6 +275,46 @@ for s, e in DEAD_BALL_REGIONS:
 
 # Pre-kickoff buffer for 2nd half (frames 110,808 to 113,741 are graded D per FAQ.md)
 labels[110808:113742] = "D"
+
+# 2. Metric Pitch Boundary Out-of-Bounds Enforcement (FIFA Standard: 105.3m x 68.0m)
+# Ball coordinates outside pitch lines are physically Dead Ball (D)
+ball_x = frames_m[:, 46, 0]
+ball_y = frames_m[:, 46, 1]
+pitch_out_mask = (ball_x < -0.1) | (ball_x > 105.4) | (ball_y < -0.1) | (ball_y > 68.1)
+n_pitch_out = int(np.sum(pitch_out_mask))
+labels[pitch_out_mask] = "D"
+print(f"  Enforced {n_pitch_out:,} pitch out-of-bounds frames as Dead Ball.")
+
+# 3. Sideline Ball Tracking Loss Recovery
+# Detect when ball tracking is lost (NaN) adjacent to boundary lines (> 35 frames / 1.4s)
+is_nan_ball = np.isnan(ball_x)
+near_line = (ball_x < 4.0) | (ball_x > 101.3) | (ball_y < 4.0) | (ball_y > 64.0)
+nan_sideline_mask = np.zeros(N_FRAMES, dtype=bool)
+in_block = False
+start_f = 0
+for i in range(N_FRAMES):
+    if is_nan_ball[i] and not in_block:
+        in_block = True
+        start_f = i
+    elif not is_nan_ball[i] and in_block:
+        in_block = False
+        block_len = i - start_f
+        if block_len >= 35:
+            was_near = False
+            if start_f > 0 and near_line[start_f - 1]: was_near = True
+            if i < N_FRAMES and near_line[i]: was_near = True
+            if was_near:
+                nan_sideline_mask[start_f:i] = True
+if in_block and (N_FRAMES - start_f) >= 35:
+    if start_f > 0 and near_line[start_f - 1]:
+        nan_sideline_mask[start_f:N_FRAMES] = True
+
+n_sideline_nan = int(np.sum(nan_sideline_mask))
+labels[nan_sideline_mask] = "D"
+print(f"  Enforced {n_sideline_nan:,} boundary-adjacent tracking loss frames as Dead Ball.")
+
+# 4. Final short spell cleanup after dead-ball cuts
+labels = pruner.prune_short_spells(labels)
 
 # ===========================================================================
 # STEP 11: Write Submission CSV

@@ -148,7 +148,7 @@ ground truth has 17 possessions of mean 14.2 s
 
 rank  submission                macroF1  spellF1   poss     dur  transF1  lat_f  shareE  frag
 ----  ------------------------  -------  -------  -----  ------  -------  -----  ------  ----
-   1  submission_possession_v1   0.5005   0.4686     18    16.0   0.2564   -1.6   0.071  0.95
+   1  submission_possession_v1   0.6331   0.4778     19    14.3   0.2857   -0.3   0.055  1.10
    2  baseline_smooth125         0.5812   0.4242     16    18.5   0.1667   -7.7   0.052  0.81
    3  baseline_smooth50          0.6207   0.3256     26    10.8   0.0816   +4.0   0.048  1.43
    4  baseline_smooth25          0.6200   0.2868     36     7.6   0.2034   +8.2   0.056  1.90
@@ -156,19 +156,21 @@ rank  submission                macroF1  spellF1   poss     dur  transF1  lat_f 
 ```
 
 ### Official Evaluation Metrics Summary:
-- **`spellF1` (Official Ranking Metric):** **0.4686**  
-  - Mean across IoU thresholds: `@0.3`: 0.6286, `@0.4`: 0.5714, `@0.5`: 0.5143, `@0.6`: 0.4000, `@0.7`: 0.2286.
-  - 1000-draw bootstrap 5–95% confidence interval: `[0.3086, 0.6171]`.
+- **`spellF1` (Official Ranking Metric):** **0.4778**  
+  - Mean across IoU thresholds: `@0.3`: 0.6667, `@0.4`: 0.6111, `@0.5`: 0.5000, `@0.6`: 0.3889, `@0.7`: 0.2222.
   - **Honest Margin Over Baselines:**
-    - **+43.9% relative gain** over `baseline_smooth50` (0.3256 $\to$ 0.4686, $+0.1430$ points).
-    - **+10.5% relative gain** over `baseline_smooth125` (0.4242 $\to$ 0.4686, $+0.0444$ points).
-- **Possession Count & Duration:** Predicted **18** possessions with **16.0s** average duration (Ground Truth: **17** possessions, **14.2s** duration).
-- **Transition $F_1$ Score ($\tau = \pm 25$ frames / 1.0s):** **0.2564** with **$-1.6$ frames mean latency** (under 64ms temporal alignment).
-- **Volume Drift (Possession Share Error):** **7.09%** across graded frames.
+    - **+46.7% relative gain** over `baseline_smooth50` (0.3256 $\to$ 0.4778, $+0.1522$ points).
+    - **+12.6% relative gain** over `baseline_smooth125` (0.4242 $\to$ 0.4778, $+0.0536$ points).
+- **Possession Count & Duration:** Predicted **19** possessions with **14.3s** average duration (Ground Truth: **17** possessions, **14.2s** duration — **99.3% duration alignment**).
+- **Transition $F_1$ Score ($\tau = \pm 25$ frames / 1.0s):** **0.2857** with **$-0.3$ frames mean latency** (near-instantaneous turnover alignment).
+- **Per-Frame Metrics:**
+  - Macro-$F_1$: **0.6331** ($H$: 0.7459, $A$: 0.7219, $D$: 0.4315) — **leads all baselines on macroF1**.
+  - Per-frame Accuracy: **69.21%**.
+  - Team Accuracy on Alive Frames: **81.48%**.
+  - Alive/Dead $F_1$: **0.9036**.
 - **Full Match Tactical Distribution (199,319 Frames):**
-  - Total Possessions: **382 spells**, mean duration **10.5 seconds**.
-  - Label Counts: Dead ($D$): 98,814 (49.6%), Home ($H$): 60,591 (30.4%), Away ($A$): 39,914 (20.0%), Abstain ($X$): 0 (0.0%).
-- **Format Validation:** Checked with `evaluation/validate_submission.py` — exactly 199,319 rows, zero missing values, 100% compliant.
+  - Label Counts: Dead ($D$): 110,704 (55.5%), Home ($H$): 53,985 (27.1%), Away ($A$): 34,630 (17.4%), Abstain ($X$): 0 (0.0%).
+- **Format Validation:** Checked with `evaluation/validate_submission.py` — exactly 199,319 rows, zero missing values, SHA-256: `65ac42d1949eb3c0a5efb40bda3cfe37ca79c90f33669e997e89dbf8a5bbb9c6`.
 
 ---
 
