@@ -197,6 +197,14 @@ entropy = -np.sum(p_safe * np.log2(p_safe), axis=1)
 
 # Dynamic fallback when model is uncertain (entropy > 0.4 bits)
 alpha = np.clip((entropy - 0.4) / 1.0, 0.0, 0.45)
+
+# Clear uncontested possession boost:
+# When one player is closely controlling the ball (d < 0.85m) and opponent is far (> 1.8m),
+# elevate alpha to 0.70 to ensure physical proximity cleanly guides possession transitions.
+uncontested_H = (dH_clean < 0.85) & (dA_clean > 1.8)
+uncontested_A = (dA_clean < 0.85) & (dH_clean > 1.8)
+alpha[uncontested_H | uncontested_A] = np.maximum(alpha[uncontested_H | uncontested_A], 0.70)
+
 p_hybrid = p_ens.copy()
 p_hybrid[:, 0] = (1.0 - alpha) * p_ens[:, 0] + alpha * prior_H
 p_hybrid[:, 1] = (1.0 - alpha) * p_ens[:, 1] + alpha * prior_A
@@ -212,6 +220,10 @@ feats_bal, touch_info = ballistics.compute_latched_features(frames_m[:, 46, :2],
 is_flight = feats_bal[:, 2].astype(bool)
 latched_H = feats_bal[:, 3]
 z_ball = feats_bal[:, 8]
+min_dist = touch_info["min_dist"]
+
+# Physical correction: ball cannot be in flight if player is controlling/dribbling it (min_dist < 1.0m)
+is_flight = is_flight & (min_dist > 1.0)
 
 # Effective 3D distance correction for aerial balls
 dH_3d = ballistics.compute_effective_3d_distance(dH_clean, z_ball)

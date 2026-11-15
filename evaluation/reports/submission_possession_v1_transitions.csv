@@ -5,7 +5,7 @@ spurious,,11469,,,,A,H
 missed,11553,,,H,A,,
 missed,11624,,,A,H,,
 spurious,,11699,,,,H,A
-spurious,,11908,,,,A,H
+spurious,,11838,,,,A,H
 matched,12665,12659,-6,H,A,H,A
 spurious,,12832,,,,A,H
 missed,12851,,,A,D,,
@@ -13,12 +13,12 @@ missed,12989,,,D,H,,
 matched,13704,13685,-19,H,A,H,A
 matched,13785,13796,11,A,H,A,H
 spurious,,13834,,,,H,A
-spurious,,13886,,,,A,H
+spurious,,13876,,,,A,H
 missed,14846,,,H,A,,
-spurious,,14879,,,,H,A
-spurious,,15308,,,,A,H
+spurious,,14877,,,,H,A
 missed,15346,,,A,H,,
 missed,15365,,,H,A,,
+spurious,,15373,,,,A,H
 spurious,,15430,,,,H,A
 spurious,,15639,,,,A,H
 spurious,,15734,,,,H,A

@@ -249,7 +249,7 @@ class BallisticsEngine:
 
         # 3B. Phase 2: Pseudo-3D Parabolic Arc Estimation
         z_ball = self.estimate_pseudo_3d_arc(ball_xy, v_ball, touch_info=touch_info)
-        is_flight = (is_flight | (z_ball > 1.8)) & (~touch_mask)
+        is_flight = (is_flight | (z_ball > 1.8)) & (~touch_mask) & (min_dist > 1.0)
 
         # 4. Latched Ownership (Resolves flight attribution)
         latched_H = np.full(N, 0.5, dtype=np.float32)
@@ -347,7 +347,13 @@ class BallisticsEngine:
 
                     # Ballistic arc condition: either traveled >= 8.0m with kick speed >= 7.0 m/s,
                     # or sustained long flight >= 20 frames (0.8s) with net distance >= 6.0m
-                    if (dist_traveled >= 8.0 and max_v >= 7.0) or (n_f >= 20 and dist_traveled >= 6.0):
+                    # Gated by player clearance: if a player is accompanying the ball (median d < 1.0m), it is a ground dribble
+                    is_clear = True
+                    if touch_info is not None and "min_dist" in touch_info:
+                        if np.nanmedian(touch_info["min_dist"][s:e]) < 1.0:
+                            is_clear = False
+
+                    if is_clear and ((dist_traveled >= 8.0 and max_v >= 7.0) or (n_f >= 20 and dist_traveled >= 6.0)):
                         T = n_f * dt
                         # Max height from projectile kinematics: z_max = (1/8) * g * T^2
                         z_max = min(6.5, (g * T**2) / 8.0)
