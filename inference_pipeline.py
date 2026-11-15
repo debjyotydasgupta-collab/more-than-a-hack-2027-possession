@@ -165,6 +165,11 @@ for i in range(0, N_FRAMES, chunk_size):
 print(f"\n  Inference complete ✓ ({time.time()-t0:.1f}s)")
 p_ens = 0.5 * p_lgb + 0.5 * p_cb
 
+# Compute un-smoothed raw ensemble log-likelihood ratio for CUSUM changepoint MLE
+pH_raw = np.clip(p_ens[:, 0], 1e-6, 1.0)
+pA_raw = np.clip(p_ens[:, 1], 1e-6, 1.0)
+llr_ens = np.log(pH_raw) - np.log(pA_raw)
+
 # ===========================================================================
 # STEP 4: Hybrid Physics-ML Uncertainty Blending Layer
 # ===========================================================================
@@ -344,12 +349,12 @@ pruner = PruneShortSpells(min_spell_frames=MIN_SPELL_FRAMES)
 labels = pruner.prune_short_spells(labels)
 
 # ===========================================================================
-# STEP 9: Boundary Impulse Snapping (Kinematic Impact Alignment)
+# STEP 9: CUSUM Log-Likelihood Changepoint MLE & Boundary Impulse Snapping
 # ===========================================================================
-print("\nSnapping boundaries to physical ball acceleration impulses...")
+print("\nSnapping boundaries to physical ball acceleration impulses & CUSUM MLE...")
 from mtah2027_possession.src.postprocess.boundary_snapper import BoundaryImpulseSnapper
-snapper = BoundaryImpulseSnapper(dt=0.04, search_window=8, accel_thresh=18.0)
-labels = snapper.snap_boundaries(labels, frames_m[:, 46, :2], frames_m[:, :46, :2], team_of_track)
+snapper = BoundaryImpulseSnapper(dt=0.04, search_window=6, cusum_window=30, accel_thresh=18.0)
+labels = snapper.snap_boundaries(labels, frames_m[:, 46, :2], frames_m[:, :46, :2], team_of_track, llr=llr_ens)
 
 # ===========================================================================
 # STEP 10: Stage 1 Multi-Modal Dead-Ball Detection Engine
