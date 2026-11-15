@@ -28,11 +28,10 @@ spurious,,15813,,,,A,H
 missed,15889,,,A,D,,
 spurious,,16276,,,,H,A
 missed,16400,,,D,A,,
-spurious,,17047,,,,A,D
-matched,17293,17280,-13,A,H,D,H
+matched,17293,17280,-13,A,H,A,H
 missed,17380,,,H,D,,
-spurious,,17456,,,,H,D
-matched,17838,17826,-12,D,A,D,A
+spurious,,17429,,,,H,D
+matched,17838,17827,-11,D,A,D,A
 matched,18027,18025,-2,A,D,A,D
 spurious,,18126,,,,D,H
 spurious,,18320,,,,H,D

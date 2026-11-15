@@ -278,6 +278,15 @@ if events:
     set_piece_dead = 0
     ball_x_coords = frames_m[:, 46, 0]
     ball_y_coords = frames_m[:, 46, 1]
+    dist_touch = np.minimum(ball_y_coords, PITCH_WIDTH - ball_y_coords)
+
+    # Kinematic ball velocity for release detection
+    vb_xy = np.zeros((N_FRAMES, 2), dtype=np.float64)
+    valid_b = ~np.isnan(ball_x_coords) & ~np.isnan(ball_y_coords)
+    vb_xy[1:] = np.diff(np.stack([ball_x_coords, ball_y_coords], axis=1), axis=0) / 0.04
+    vb_xy[~valid_b] = 0.0
+    vb_xy[1:][~valid_b[:-1]] = 0.0
+    v_ball = np.linalg.norm(vb_xy, axis=1)
 
     for sp in [e for e in events if e.get("code") == "SET PIECES"]:
         sf = max(0, sp["start_frame"])
@@ -286,6 +295,7 @@ if events:
         tm = (sp["tags"].get("Team") or "").lower()
         tm_lbl = "H" if tm in ("barcelona", "fc barcelona") else ("A" if tm in ("atletic club", "athletic club") else None)
         restart_f = None
+        start_d = sf
 
         if "goal kick" in typ:
             # Ball inside 6-yard goal area (x < 5.5m or x > 99.8m) or untracked before kick departure
@@ -297,33 +307,41 @@ if events:
                     restart_f = f
                     break
         elif "corner kick" in typ:
-            # Ball in corner arc (within 1.5m of corners) before delivery
-            for f in range(sf, ef):
-                in_corner = (ball_x_coords[f] < 1.5 or ball_x_coords[f] > 103.8) and (ball_y_coords[f] < 1.5 or ball_y_coords[f] > 66.5)
-                if np.isnan(ball_x_coords[f]) or in_corner:
-                    labels[f] = "D"
-                    set_piece_dead += 1
-                else:
+            # Search forward for corner delivery: v_ball > 5.5 m/s
+            for f in range(sf + 20, ef):
+                if v_ball[f] > 5.5:
                     restart_f = f
                     break
+            end_d = restart_f if restart_f else ef
+            labels[sf:end_d] = "D"
+            set_piece_dead += (end_d - sf)
         elif "free kick" in typ:
-            # Ball untracked before strike
-            for f in range(sf, ef):
-                if np.isnan(ball_x_coords[f]):
-                    labels[f] = "D"
-                    set_piece_dead += 1
+            # Free kick preparation: foul occurred when possessing team separated from ball
+            foul_team = 1 if tm_lbl == "H" else 0
+            d_foul = dH_clean if foul_team == 0 else dA_clean
+            b_f = sf
+            while b_f > max(0, sf - 180):
+                if np.isnan(ball_x_coords[b_f]) or v_ball[b_f] < 2.0 or d_foul[b_f] > 1.8:
+                    b_f -= 1
                 else:
+                    break
+            start_d = b_f
+            for f in range(sf + 20, ef):
+                if v_ball[f] > 6.0:
                     restart_f = f
                     break
+            end_d = restart_f if restart_f else ef
+            labels[start_d:end_d] = "D"
+            set_piece_dead += (end_d - start_d)
         elif "throw-in" in typ:
-            # Ball untracked or outside boundary before throw-in release
-            for f in range(sf, ef):
-                if np.isnan(ball_x_coords[f]) or ball_y_coords[f] < 0.2 or ball_y_coords[f] > 67.8:
-                    labels[f] = "D"
-                    set_piece_dead += 1
-                else:
+            # Search forward for throw release: v_ball > 4.5 m/s and dist_touch > 1.5m
+            for f in range(sf + 20, ef):
+                if v_ball[f] > 4.5 and dist_touch[f] > 1.5:
                     restart_f = f
                     break
+            end_d = restart_f if restart_f else ef
+            labels[sf:end_d] = "D"
+            set_piece_dead += (end_d - sf)
         elif "kick off" in typ:
             for f in range(sf, ef):
                 if "start" in typ and f < 11186 and sf < 20000:
@@ -379,13 +397,18 @@ n_pitch_out = int(np.sum(pitch_out_mask))
 labels[pitch_out_mask] = "D"
 print(f"  Enforced {n_pitch_out:,} pitch out-of-bounds frames as Dead Ball.")
 
-# 3. Sideline Ball Tracking Loss Recovery
+# 3. Dynamic Sideline Ball Tracking Loss Recovery
 # Detect when ball tracking is lost (NaN) adjacent to boundary lines (> 35 frames / 1.4s)
+# Gated by dynamic player velocity to distinguish genuine dead-ball stoppages from live-play occlusions
+players_xy = frames_m[:, :46, :2]
+vp = np.sqrt(np.diff(players_xy[:, :, 0], axis=0)**2 + np.diff(players_xy[:, :, 1], axis=0)**2) / 0.04
+team_speed = np.nanmedian(vp, axis=1)
+
 is_nan_ball = np.isnan(ball_x)
 near_line = (ball_x < 4.0) | (ball_x > 101.3) | (ball_y < 4.0) | (ball_y > 64.0)
-nan_sideline_mask = np.zeros(N_FRAMES, dtype=bool)
 in_block = False
 start_f = 0
+n_sideline_nan = 0
 for i in range(N_FRAMES):
     if is_nan_ball[i] and not in_block:
         in_block = True
@@ -398,14 +421,27 @@ for i in range(N_FRAMES):
             if start_f > 0 and near_line[start_f - 1]: was_near = True
             if i < N_FRAMES and near_line[i]: was_near = True
             if was_near:
-                nan_sideline_mask[start_f:i] = True
+                block_speed = np.nanmedian(team_speed[max(0, start_f-1):min(N_FRAMES-1, i)])
+                was_out_of_bounds = False
+                if start_f > 0 and (ball_x[start_f-1] < -0.1 or ball_x[start_f-1] > 105.4 or ball_y[start_f-1] < -0.1 or ball_y[start_f-1] > 68.1):
+                    was_out_of_bounds = True
+
+                # Physical threshold: 1.35 m/s separates dead-ball stroll from active live play
+                if block_speed > 1.35 and not was_out_of_bounds:
+                    prev_label = labels[start_f - 1] if start_f > 0 else "H"
+                    if prev_label in ("H", "A"):
+                        labels[start_f:i] = prev_label
+                else:
+                    labels[start_f:i] = "D"
+                    n_sideline_nan += block_len
 if in_block and (N_FRAMES - start_f) >= 35:
     if start_f > 0 and near_line[start_f - 1]:
-        nan_sideline_mask[start_f:N_FRAMES] = True
+        block_speed = np.nanmedian(team_speed[max(0, start_f-1):N_FRAMES-1])
+        if block_speed <= 1.35:
+            labels[start_f:N_FRAMES] = "D"
+            n_sideline_nan += (N_FRAMES - start_f)
 
-n_sideline_nan = int(np.sum(nan_sideline_mask))
-labels[nan_sideline_mask] = "D"
-print(f"  Enforced {n_sideline_nan:,} boundary-adjacent tracking loss frames as Dead Ball.")
+print(f"  Enforced {n_sideline_nan:,} dynamic boundary-adjacent tracking loss frames as Dead Ball.")
 
 # 4. Final short spell cleanup after dead-ball cuts
 labels = pruner.prune_short_spells(labels)
