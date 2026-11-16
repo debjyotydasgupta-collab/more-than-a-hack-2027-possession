@@ -380,11 +380,14 @@ pruner = PruneShortSpells(min_spell_frames=MIN_SPELL_FRAMES)
 labels = pruner.prune_short_spells(labels)
 
 # ===========================================================================
-# STEP 9: CUSUM Log-Likelihood Changepoint MLE & Boundary Impulse Snapping
+# STEP 9: Stage 2 Asymmetric Turnover Handoff Snapping & CUSUM MLE
 # ===========================================================================
-print("\nSnapping boundaries to physical ball acceleration impulses & CUSUM MLE...")
+print("\nSnapping boundaries to physical ball acceleration impulses & Stage 2 turnover handoffs...")
 from mtah2027_possession.src.postprocess.boundary_snapper import BoundaryImpulseSnapper
-snapper = BoundaryImpulseSnapper(dt=0.04, search_window=6, cusum_window=30, accel_thresh=18.0)
+snapper = BoundaryImpulseSnapper(
+    dt=0.04, search_window=6, cusum_window=30, accel_thresh=18.0,
+    turnover_lookback=120, accel_thresh_turnover=14.0, max_dist_turnover=3.5
+)
 labels = snapper.snap_boundaries(labels, frames_m[:, 46, :2], frames_m[:, :46, :2], team_of_track, llr=llr_ens)
 
 # ===========================================================================
@@ -522,6 +525,10 @@ print(f"  Enforced {n_nan_clamped:,} untracked stoppage frames as Dead Ball.")
 
 # 6. Final short spell cleanup after dead-ball cuts
 labels = pruner.prune_short_spells(labels)
+
+# 7. Stage 2 Asymmetric Turnover Handoff Snapping Alignment
+print("\nApplying Stage 2 Asymmetric Turnover Handoff Snapping Alignment...")
+labels = snapper.snap_boundaries(labels, frames_m[:, 46, :2], frames_m[:, :46, :2], team_of_track)
 
 # ===========================================================================
 # STEP 11: Write Submission CSV

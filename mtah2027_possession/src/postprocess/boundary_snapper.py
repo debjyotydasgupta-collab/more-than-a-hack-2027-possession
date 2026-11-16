@@ -11,7 +11,9 @@ import pandas as pd
 
 class BoundaryImpulseSnapper:
     def __init__(self, dt: float = 0.04, search_window: int = 6, cusum_window: int = 30,
-                 accel_thresh: float = 18.0, pitch_length: float = 105.3, pitch_width: float = 68.0):
+                 accel_thresh: float = 18.0, turnover_lookback: int = 120,
+                 accel_thresh_turnover: float = 14.0, max_dist_turnover: float = 3.5,
+                 pitch_length: float = 105.3, pitch_width: float = 68.0):
         """
         Parameters
         ----------
@@ -23,6 +25,12 @@ class BoundaryImpulseSnapper:
             Window radius in frames for CUSUM log-likelihood ratio step changepoint search (default: 30 frames = 1.2s).
         accel_thresh : float
             Ball acceleration threshold in m/s^2 indicating physical impact/kick.
+        turnover_lookback : int
+            Maximum backward lookback window in frames (default: 120 frames = 4.8s) to locate initial turnover impact.
+        accel_thresh_turnover : float
+            Ball acceleration threshold in m/s^2 for turnover handoff snapping (default: 14.0 m/s^2).
+        max_dist_turnover : float
+            Maximum distance in meters from receiving team to ball during turnover contact (default: 3.5m).
         pitch_length, pitch_width : float
             Pitch dimensions in meters.
         """
@@ -30,6 +38,9 @@ class BoundaryImpulseSnapper:
         self.search_window = search_window
         self.cusum_window = cusum_window
         self.accel_thresh = accel_thresh
+        self.turnover_lookback = turnover_lookback
+        self.accel_thresh_turnover = accel_thresh_turnover
+        self.max_dist_turnover = max_dist_turnover
         self.pitch_length = pitch_length
         self.pitch_width = pitch_width
 
@@ -132,36 +143,50 @@ class BoundaryImpulseSnapper:
                 d_target = dA if target_team == 'A' else dH
                 old_is_H = (l_prev in ('H', 0))
 
-                # Step 1: Retrospective CUSUM log-likelihood changepoint MLE
-                if llr is not None:
-                    tau_anchor = self.refine_boundary_cusum(llr, t_trans, old_is_H=old_is_H, w=self.cusum_window)
-                else:
-                    tau_anchor = t_trans
+                # Step 1: Stage 2 Asymmetric Turnover Handoff Snapping
+                # Search backward across lookback window for the exact physical impact inflection
+                w_turnover_start = max(1, t_trans - self.turnover_lookback)
+                best_turnover_t = None
+                best_turnover_score = -1e9
+                for cand in range(t_trans - 1, w_turnover_start - 1, -1):
+                    if a_ball[cand] >= self.accel_thresh_turnover and d_target[cand] <= self.max_dist_turnover:
+                        score = a_ball[cand] - 2.5 * d_target[cand]
+                        if score > best_turnover_score:
+                            best_turnover_score = score
+                            best_turnover_t = cand
 
-                # Step 2: Search for physical touch impact peak in search window around tau_anchor
-                w_start = max(1, tau_anchor - self.search_window)
-                w_end = min(N - 1, tau_anchor + self.search_window + 1)
-                
-                acc_win = a_ball[w_start:w_end]
-                d_win = d_target[w_start:w_end]
-                
-                candidates = []
-                for idx_rel, t_cand in enumerate(range(w_start, w_end)):
-                    if d_win[idx_rel] < 1.4 and acc_win[idx_rel] >= self.accel_thresh:
-                        score = acc_win[idx_rel] - 5.0 * d_win[idx_rel]
-                        candidates.append((score, t_cand))
-                
-                if candidates:
-                    candidates.sort(key=lambda x: x[0], reverse=True)
-                    best_t = candidates[0][1]
+                if best_turnover_t is not None and best_turnover_t < t_trans:
+                    snapped[best_turnover_t:t_trans] = l_next
                 else:
-                    best_t = tau_anchor
+                    # Fallback: Retrospective CUSUM log-likelihood changepoint MLE + local impulse search
+                    if llr is not None:
+                        tau_anchor = self.refine_boundary_cusum(llr, t_trans, old_is_H=old_is_H, w=self.cusum_window)
+                    else:
+                        tau_anchor = t_trans
+
+                    w_start = max(1, tau_anchor - self.search_window)
+                    w_end = min(N - 1, tau_anchor + self.search_window + 1)
                     
-                # Snap transition boundary from original t_trans to best_t
-                if best_t < t_trans:
-                    snapped[best_t:t_trans] = l_next
-                elif best_t > t_trans:
-                    snapped[t_trans:best_t] = l_prev
+                    acc_win = a_ball[w_start:w_end]
+                    d_win = d_target[w_start:w_end]
+                    
+                    candidates = []
+                    for idx_rel, t_cand in enumerate(range(w_start, w_end)):
+                        if d_win[idx_rel] < 1.4 and acc_win[idx_rel] >= self.accel_thresh:
+                            score = acc_win[idx_rel] - 5.0 * d_win[idx_rel]
+                            candidates.append((score, t_cand))
+                    
+                    if candidates:
+                        candidates.sort(key=lambda x: x[0], reverse=True)
+                        best_t = candidates[0][1]
+                    else:
+                        best_t = tau_anchor
+                        
+                    # Snap transition boundary from original t_trans to best_t
+                    if best_t < t_trans:
+                        snapped[best_t:t_trans] = l_next
+                    elif best_t > t_trans:
+                        snapped[t_trans:best_t] = l_prev
 
             # CASE 2: Live to Dead Ball (H/A -> D)
             elif l_next in ('D', 2):
