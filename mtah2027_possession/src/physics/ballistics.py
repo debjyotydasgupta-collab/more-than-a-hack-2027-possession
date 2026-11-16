@@ -279,13 +279,13 @@ class BallisticsEngine:
 
         # 5. Speed continuity
         v_diff = np.abs(np.diff(v_ball, 1, prepend=v_ball[0]))
-        ball_speed_continuity = v_diff / (v_ball + 1.0)
+        ball_speed_continuity = (v_diff / (v_ball + 1.0)).astype(np.float32)
 
         # 6. Max innovation in rolling 1s window (25 frames)
         s_innov = pd.Series(innov_stats)
-        innov_max_1s = s_innov.rolling(25, min_periods=1).max().values.astype(np.float32)
+        innov_max_1s = np.asarray(s_innov.rolling(25, min_periods=1).max().to_numpy(), dtype=np.float32)
 
-        features = np.column_stack([
+        feature_cols: list[np.ndarray] = [
             frames_since_touch,
             team_last_touch,
             is_flight.astype(np.float32),
@@ -294,8 +294,9 @@ class BallisticsEngine:
             innov_max_1s,
             time_to_next_touch,
             next_touch_team,
-            z_ball
-        ])
+            z_ball,
+        ]
+        features = np.column_stack(feature_cols)  # type: ignore[arg-type]
 
         return features, touch_info
 
