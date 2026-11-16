@@ -476,17 +476,20 @@ if in_block and (N_FRAMES - start_f) >= 35:
 
 print(f"  Enforced {n_sideline_nan:,} dynamic boundary-adjacent tracking loss frames as Dead Ball.")
 
-# 4. Team-Level Kinetic Energy Gating (Unsupervised Match-Wide Gating per Section 4c)
-# Detect low-energy clusters where outfield players are stationary (< 1.1 m/s)
-# and ball is static (< 1.5 m/s) near restart locations (corner arcs, 6-yard box, center circle, sidelines)
-near_corner = ((ball_x < 3.0) | (ball_x > 102.0)) & ((ball_y < 3.0) | (ball_y > 65.0))
-near_goal_kick = ((ball_x < 6.0) | (ball_x > 99.0)) & (ball_y > 23.0) & (ball_y < 45.0)
+# 4. Stage 1 Enhanced Pitch-Wide Kinetic Energy Rest & Topological Gating
+# Detect low-energy clusters where outfield players are walking (< 1.25 m/s)
+# and ball is static (< 1.5 m/s) near restart topologies (corners, goal areas, center circle, wide touchlines)
+near_touchline_wide = (ball_y < 8.5) | (ball_y > 59.5)
+near_corner = ((ball_x < 4.0) | (ball_x > 101.3)) & ((ball_y < 4.0) | (ball_y > 64.0))
+near_goal_kick = ((ball_x < 7.0) | (ball_x > 98.3)) & (ball_y > 20.0) & (ball_y < 48.0)
 near_center = np.sqrt((ball_x - 52.5)**2 + (ball_y - 34.0)**2) < 9.5
-near_touchline = (ball_y < 1.5) | (ball_y > 66.5)
-restart_loc = near_corner | near_goal_kick | near_center | near_touchline
+restart_loc = near_corner | near_goal_kick | near_center | near_touchline_wide
 
-mean_player_speed = np.nanmean(vp, axis=1)
-low_energy = (mean_player_speed < 1.1) & (v_ball[1:] < 1.5) & restart_loc[1:]
+mean_player_speed = np.zeros(N_FRAMES, dtype=np.float64)
+mean_player_speed[1:] = np.nanmean(vp, axis=1)
+mean_player_speed[0] = mean_player_speed[1]
+
+low_energy = (mean_player_speed < 1.25) & (v_ball < 1.5) & restart_loc
 
 breaks_le = np.flatnonzero(low_energy[1:] != low_energy[:-1]) + 1
 starts_le = [0] + list(breaks_le)
@@ -494,16 +497,30 @@ ends_le = list(breaks_le) + [len(low_energy)]
 
 n_energy_dead = 0
 for s, e in zip(starts_le, ends_le):
-    if low_energy[s] and (e - s) >= 50:
-        actual_s = s + 1
-        actual_e = e + 1
-        was_live = np.sum((labels[actual_s:actual_e] == "H") | (labels[actual_s:actual_e] == "A"))
+    if low_energy[s] and (e - s) >= 60:
+        was_live = np.sum((labels[s:e] == "H") | (labels[s:e] == "A"))
         if was_live > 0:
-            labels[actual_s:actual_e] = "D"
+            labels[s:e] = "D"
             n_energy_dead += (e - s)
 print(f"  Enforced {n_energy_dead:,} low-kinetic-energy restart frames as Dead Ball.")
 
-# 5. Final short spell cleanup after dead-ball cuts
+# 5. Untracked Ball Deceleration Stoppage Engine
+# When ball tracking is lost (NaN) for >= 50 frames (2.0s) and outfield player speed is decelerating (< 2.2 m/s),
+# clamp to Dead Ball (D)
+breaks_nan = np.flatnonzero(is_nan_ball[1:] != is_nan_ball[:-1]) + 1
+starts_nan = [0] + list(breaks_nan)
+ends_nan = list(breaks_nan) + [len(is_nan_ball)]
+
+n_nan_clamped = 0
+for s, e in zip(starts_nan, ends_nan):
+    if is_nan_ball[s] and (e - s) >= 50:
+        sp = np.nanmean(mean_player_speed[s:e])
+        if sp < 2.2:
+            labels[s:e] = "D"
+            n_nan_clamped += (e - s)
+print(f"  Enforced {n_nan_clamped:,} untracked stoppage frames as Dead Ball.")
+
+# 6. Final short spell cleanup after dead-ball cuts
 labels = pruner.prune_short_spells(labels)
 
 # ===========================================================================
