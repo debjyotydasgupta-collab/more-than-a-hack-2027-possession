@@ -134,11 +134,11 @@ class ViterbiSequenceDecoder:
             T_HA = self.trans_penalty_swap * sig_dA
             T_AH = self.trans_penalty_swap * sig_dH
 
-            # Phase 2: Aerial Trajectory Suppression (z > 1.8m)
-            # When the ball is airborne, turf-level players cannot execute a tackle or turnover
+            # Stage 3: Aerial Cross & Trajectory Suppression (z > 1.5m)
+            # When the ball is airborne on crosses/clearances, turf-level players cannot execute a tackle or turnover
             if z_ball is not None:
                 z_clean = np.nan_to_num(z_ball, nan=0.1)
-                airborne = (z_clean > 1.8)
+                airborne = (z_clean > 1.5)
                 T_HA[airborne] = min(self.trans_penalty_swap * 2.5, -6.0)
                 T_AH[airborne] = min(self.trans_penalty_swap * 2.5, -6.0)
 

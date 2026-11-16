@@ -523,11 +523,47 @@ for s, e in zip(starts_nan, ends_nan):
             n_nan_clamped += (e - s)
 print(f"  Enforced {n_nan_clamped:,} untracked stoppage frames as Dead Ball.")
 
-# 6. Final short spell cleanup after dead-ball cuts
+# 6. Stage 3 Goalkeeper Box Restart Protocol (FIFA Law 16)
+# In the 6-yard goal area / defensive penalty box, when opponents are outside the box (FIFA Law 16: opponents
+# must remain outside until goal kick is taken) and ball is stationary/rolling slowly (< 3.5 m/s)
+# being placed by the goalkeeper/defender, play is physically DEAD (D) until kicked into active play.
+in_gk_area_home = (ball_x <= 6.0) & (ball_y >= 22.0) & (ball_y <= 46.0) & (dA_clean > 8.0)
+in_gk_area_away = (ball_x >= 99.3) & (ball_y >= 22.0) & (ball_y <= 46.0) & (dH_clean > 8.0)
+
+n_gk_clamped = 0
+for f in range(N_FRAMES):
+    if in_gk_area_home[f] and v_ball[f] < 3.5:
+        if labels[f] == "H":
+            labels[f] = "D"
+            n_gk_clamped += 1
+    elif in_gk_area_away[f] and v_ball[f] < 3.5:
+        if labels[f] == "A":
+            labels[f] = "D"
+            n_gk_clamped += 1
+
+print(f"  Enforced {n_gk_clamped:,} goalkeeper box goal-kick setup frames as Dead Ball.")
+
+# 7. Stage 3 Exclusive Physical Custody Invariant
+# When a team has close uncontested physical custody (d_team <= 1.0m, d_opp >= 3.0m, v_ball <= 2.5m/s),
+# the opposing team cannot be in possession regardless of broad tactical phase tags.
+n_custody_overridden = 0
+for f in range(N_FRAMES):
+    if dH_clean[f] <= 1.0 and dA_clean[f] >= 3.0 and v_ball[f] <= 2.5:
+        if labels[f] == "A":
+            labels[f] = "H"
+            n_custody_overridden += 1
+    elif dA_clean[f] <= 1.0 and dH_clean[f] >= 3.0 and v_ball[f] <= 2.5:
+        if labels[f] == "H":
+            labels[f] = "A"
+            n_custody_overridden += 1
+
+print(f"  Enforced {n_custody_overridden:,} exclusive physical custody frames.")
+
+# 8. Final short spell cleanup after dead-ball & custody cuts
 labels = pruner.prune_short_spells(labels)
 
-# 7. Stage 2 Asymmetric Turnover Handoff Snapping Alignment
-print("\nApplying Stage 2 Asymmetric Turnover Handoff Snapping Alignment...")
+# 9. Stage 2/3 Asymmetric Turnover Handoff Snapping Alignment
+print("\nApplying Stage 2/3 Asymmetric Turnover Handoff Snapping Alignment...")
 labels = snapper.snap_boundaries(labels, frames_m[:, 46, :2], frames_m[:, :46, :2], team_of_track)
 
 # ===========================================================================
