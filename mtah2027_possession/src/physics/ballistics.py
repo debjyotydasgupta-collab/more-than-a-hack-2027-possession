@@ -18,7 +18,6 @@ Key mathematical principles:
 
 from __future__ import annotations
 
-from typing import Any
 import numpy as np
 import pandas as pd
 
@@ -285,18 +284,16 @@ class BallisticsEngine:
         s_innov = pd.Series(innov_stats)
         innov_max_1s = np.asarray(s_innov.rolling(25, min_periods=1).max().to_numpy(), dtype=np.float32)
 
-        feature_cols: list[np.ndarray] = [
-            frames_since_touch,
-            team_last_touch,
-            is_flight.astype(np.float32),
-            latched_H,
-            ball_speed_continuity,
-            innov_max_1s,
-            time_to_next_touch,
-            next_touch_team,
-            z_ball,
-        ]
-        features = np.column_stack(feature_cols)  # type: ignore[arg-type]
+        features = np.zeros((N, 9), dtype=np.float32)
+        features[:, 0] = frames_since_touch
+        features[:, 1] = team_last_touch
+        features[:, 2] = is_flight.astype(np.float32)
+        features[:, 3] = latched_H
+        features[:, 4] = ball_speed_continuity
+        features[:, 5] = innov_max_1s
+        features[:, 6] = time_to_next_touch
+        features[:, 7] = next_touch_team
+        features[:, 8] = z_ball
 
         return features, touch_info
 
@@ -324,13 +321,16 @@ class BallisticsEngine:
         dt = self.dt
 
         # Ensure ball coordinates are linearly interpolated across tracking gaps
-        bx = np.asarray(pd.Series(ball_xy[:, 0]).interpolate(method="linear").bfill().ffill().values, dtype=np.float64)
-        by = np.asarray(pd.Series(ball_xy[:, 1]).interpolate(method="linear").bfill().ffill().values, dtype=np.float64)
+        bx = np.asarray(pd.Series(ball_xy[:, 0]).interpolate(method="linear").bfill().ffill().to_numpy(), dtype=np.float64)
+        by = np.asarray(pd.Series(ball_xy[:, 1]).interpolate(method="linear").bfill().ffill().to_numpy(), dtype=np.float64)
 
         # Clean velocity
-        vx = np.diff(bx, 1, prepend=bx[0]) / dt
-        vy = np.diff(by, 1, prepend=by[0]) / dt
-        vb = np.sqrt(vx**2 + vy**2)
+        if v_ball is not None and len(v_ball) == N:
+            vb = np.asarray(v_ball, dtype=np.float64)
+        else:
+            vx = np.diff(bx, 1, prepend=bx[0]) / dt
+            vy = np.diff(by, 1, prepend=by[0]) / dt
+            vb = np.sqrt(vx**2 + vy**2)
 
         # Identify ballistic flight candidate intervals (sustained motion >= 3.0 m/s)
         is_moving = (vb > 3.0)
