@@ -8,7 +8,7 @@ Competition: FC Barcelona More Than A Hack 2027 - Phase 1.
 import argparse
 import os
 import sys
-import yaml
+import yaml  # type: ignore[import-untyped]
 import numpy as np
 import pandas as pd
 

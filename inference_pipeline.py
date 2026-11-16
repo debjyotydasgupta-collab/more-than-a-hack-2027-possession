@@ -16,6 +16,8 @@ Usage:
     python inference_pipeline.py [--out <output_path>]
 """
 
+from __future__ import annotations
+
 import os
 import sys
 import time
@@ -23,8 +25,10 @@ import pickle
 import hashlib
 import warnings
 import argparse
+from typing import Any
 import numpy as np
 import pandas as pd
+from scipy.ndimage import uniform_filter1d  # type: ignore[import-untyped]
 
 warnings.filterwarnings("ignore")
 
@@ -149,6 +153,7 @@ chunk_size = 50_000
 p_lgb = np.zeros((N_FRAMES, 4), dtype=np.float32)
 p_cb  = np.zeros((N_FRAMES, 4), dtype=np.float32)
 
+assert lgb_model is not None and cb_model is not None, "Ensemble models must be loaded."
 for i in range(0, N_FRAMES, chunk_size):
     end_i = min(i + chunk_size, N_FRAMES)
     chunk_X = X_all[i:end_i]
@@ -257,7 +262,6 @@ p_hybrid /= np.sum(p_hybrid, axis=1, keepdims=True)
 print("\nRunning Dynamic Viterbi Sequence Decoding with Stage 4 Pitch Control...")
 from mtah2027_possession.src.postprocess.viterbi_decoder import ViterbiSequenceDecoder
 from mtah2027_possession.src.features.pitch_control import PitchControlFeatureExtractor
-from scipy.ndimage import uniform_filter1d
 
 # Stage 4: Spearman Time-to-Intercept (TTI) Pitch Control Field Modeling
 ball_xy = frames_m[:, 46, :2]

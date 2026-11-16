@@ -16,6 +16,9 @@ Key mathematical principles:
    the ball unless Lambda_t > 9.21 or dv > 1.8 m/s.
 """
 
+from __future__ import annotations
+
+from typing import Any
 import numpy as np
 import pandas as pd
 
@@ -113,8 +116,8 @@ class BallisticsEngine:
 
         vx, vy = x_est[:, 2], x_est[:, 3]
         v_ball = np.sqrt(vx**2 + vy**2)
-        dv_x = np.diff(vx, prepend=vx[0])
-        dv_y = np.diff(vy, prepend=vy[0])
+        dv_x = np.diff(vx, 1, prepend=vx[0])
+        dv_y = np.diff(vy, 1, prepend=vy[0])
         dv_mag = np.sqrt(dv_x**2 + dv_y**2)
 
         bx = ball_xy[:, 0, None]
@@ -275,7 +278,7 @@ class BallisticsEngine:
                     latched_H[t] = 0.15
 
         # 5. Speed continuity
-        v_diff = np.abs(np.diff(v_ball, prepend=v_ball[0]))
+        v_diff = np.abs(np.diff(v_ball, 1, prepend=v_ball[0]))
         ball_speed_continuity = v_diff / (v_ball + 1.0)
 
         # 6. Max innovation in rolling 1s window (25 frames)

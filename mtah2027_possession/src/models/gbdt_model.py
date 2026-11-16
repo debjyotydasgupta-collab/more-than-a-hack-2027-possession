@@ -11,6 +11,8 @@ Directly implements Layer 1 of the architecture described in `ball_possession_ma
   - Serialization (save/load) compatible with pipeline inference specifications
 """
 
+from __future__ import annotations
+
 import os
 import pickle
 from typing import Any
@@ -18,19 +20,23 @@ import numpy as np
 
 # Robust import check for LightGBM
 HAS_LIGHTGBM = False
+lgb: Any = None
 try:
-    import lightgbm as lgb
+    import lightgbm as lgb  # type: ignore[import-untyped]
     HAS_LIGHTGBM = True
 except ImportError:
-    pass
+    lgb = None
+    HAS_LIGHTGBM = False
 
 # Robust import check for CatBoost
 HAS_CATBOOST = False
+cb: Any = None
 try:
-    import catboost as cb
+    import catboost as cb  # type: ignore[import-untyped]
     HAS_CATBOOST = True
 except ImportError:
-    pass
+    cb = None
+    HAS_CATBOOST = False
 
 # Global class mappings
 CLASSES = np.array([0, 1, 2, 3], dtype=np.int64)
@@ -177,7 +183,7 @@ class FallbackSpatialClassifier:
 
     def predict_proba(self, X):
         """Return (N, 4) probability distribution."""
-        if self.weights is None or self.mean is None:
+        if self.weights is None or self.mean is None or self.std is None or self.bias is None:
             raise ValueError("FallbackSpatialClassifier has not been fitted yet.")
         if hasattr(X, "values"):
             X = X.values
@@ -270,7 +276,7 @@ class PossessionGBDT:
             sample_weight = np.asarray(sample_weight, dtype=np.float32).ravel()
 
         # Backend 1: LightGBM
-        if self.backend == "lightgbm" and HAS_LIGHTGBM:
+        if self.backend == "lightgbm" and HAS_LIGHTGBM and lgb is not None:
             default_params = {
                 "objective": "multiclass",
                 "num_class": 4,
@@ -294,7 +300,7 @@ class PossessionGBDT:
             self.model.fit(X, y, **fit_kwargs)
 
         # Backend 2: CatBoost
-        elif self.backend == "catboost" and HAS_CATBOOST:
+        elif self.backend == "catboost" and HAS_CATBOOST and cb is not None:
             default_params = {
                 "loss_function": "MultiClass",
                 "classes_count": 4,
