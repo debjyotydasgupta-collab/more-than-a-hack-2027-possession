@@ -180,6 +180,12 @@ A_mask = (team_of_track == 1)
 bx = frames_m[:, 46, 0]
 by = frames_m[:, 46, 1]
 players_m = frames_m[:, :46, :]
+players_xy = frames_m[:, :46, :2]
+
+# Outfield player velocities for dynamic pitch control & kinetic energy gating
+vp = np.zeros((N_FRAMES, 46), dtype=np.float32)
+vp[1:] = np.sqrt(np.diff(players_xy[:, :, 0], axis=0)**2 + np.diff(players_xy[:, :, 1], axis=0)**2) / 0.04
+vp[0] = vp[1]
 
 dH = np.nanmin(np.sqrt((players_m[:, H_mask, 0] - bx[:, None])**2 + (players_m[:, H_mask, 1] - by[:, None])**2), axis=1)
 dA = np.nanmin(np.sqrt((players_m[:, A_mask, 0] - bx[:, None])**2 + (players_m[:, A_mask, 1] - by[:, None])**2), axis=1)
@@ -237,15 +243,27 @@ p_hybrid[is_flight, 2] = 0.001
 p_hybrid /= np.sum(p_hybrid, axis=1, keepdims=True)
 
 # ===========================================================================
-# STEP 6: Dynamic Viterbi Sequence Decoding with Tactical Bayesian Priors
+# STEP 6: Dynamic Viterbi Sequence Decoding with Stage 4 Pitch Control (TTI)
 # ===========================================================================
-print("\nRunning Dynamic Viterbi Sequence Decoding...")
+print("\nRunning Dynamic Viterbi Sequence Decoding with Stage 4 Pitch Control...")
 from mtah2027_possession.src.postprocess.viterbi_decoder import ViterbiSequenceDecoder
+from mtah2027_possession.src.features.pitch_control import PitchControlFeatureExtractor
+from scipy.ndimage import uniform_filter1d
+
+# Stage 4: Spearman Time-to-Intercept (TTI) Pitch Control Field Modeling
+ball_xy = frames_m[:, 46, :2]
+ball_smooth = ball_xy.copy()
+ball_smooth[:, 0] = uniform_filter1d(np.nan_to_num(ball_xy[:, 0], nan=52.5), size=5)
+ball_smooth[:, 1] = uniform_filter1d(np.nan_to_num(ball_xy[:, 1], nan=34.0), size=5)
+
+pce = PitchControlFeatureExtractor(team_of_track=team_of_track)
+feats_pc = pce.extract(players_xy, vp, ball_smooth)
+pc_diff = feats_pc[:, 2]  # PC_H - PC_A in [-1, 1]
 
 p_adj = p_hybrid.copy()
 events = []
 if os.path.exists(TAGGING_XML):
-    print("  Injecting Tactical Smart Tagging Bayesian phase priors (boost = 1.3)...")
+    print("  Injecting Tactical Smart Tagging Bayesian phase priors with physical custody gating...")
     from mtah2027_possession.src.data.load_smart_tagging import load as load_events
     events = load_events()
     for ev in events:
@@ -255,15 +273,25 @@ if os.path.exists(TAGGING_XML):
         tm = (ev["tags"].get("Team") or "").strip().lower()
         if c in ("PROGRESSION", "BUILD UP", "BALL IN FINAL THIRD"):
             if tm in ("barcelona", "fc barcelona", "h"):
-                p_adj[sf:ef, 0] *= 1.3
+                opp_custody = (dA_clean[sf:ef] <= 1.0) & (dH_clean[sf:ef] >= 2.5)
+                p_adj[sf:ef, 0] = np.where(~opp_custody, p_adj[sf:ef, 0] * 1.3, p_adj[sf:ef, 0])
             elif tm in ("atletic club", "athletic club", "a"):
-                p_adj[sf:ef, 1] *= 1.3
+                opp_custody = (dH_clean[sf:ef] <= 1.0) & (dA_clean[sf:ef] >= 2.5)
+                p_adj[sf:ef, 1] = np.where(~opp_custody, p_adj[sf:ef, 1] * 1.3, p_adj[sf:ef, 1])
         elif c == "ATTACKING TRANSITION":
             if tm in ("barcelona", "fc barcelona", "h"):
-                p_adj[sf:ef, 0] *= 1.3
+                opp_custody = (dA_clean[sf:ef] <= 1.0) & (dH_clean[sf:ef] >= 2.5)
+                p_adj[sf:ef, 0] = np.where(~opp_custody, p_adj[sf:ef, 0] * 1.3, p_adj[sf:ef, 0])
             elif tm in ("atletic club", "athletic club", "a"):
-                p_adj[sf:ef, 1] *= 1.3
-    p_adj /= np.sum(p_adj, axis=1, keepdims=True)
+                opp_custody = (dH_clean[sf:ef] <= 1.0) & (dA_clean[sf:ef] >= 2.5)
+                p_adj[sf:ef, 1] = np.where(~opp_custody, p_adj[sf:ef, 1] * 1.3, p_adj[sf:ef, 1])
+
+# Stage 4: Calibrate 50/50 contested loose ball emissions (0.70m <= d_ball <= 1.80m) by dynamic Pitch Control
+min_d = np.minimum(dH_clean, dA_clean)
+contested = (min_d >= 0.70) & (min_d <= 1.80) & (np.abs(dH_clean - dA_clean) < 0.60)
+p_adj[contested, 0] *= (1.0 + 0.20 * np.clip(pc_diff[contested], -1.0, 1.0))
+p_adj[contested, 1] *= (1.0 - 0.20 * np.clip(pc_diff[contested], -1.0, 1.0))
+p_adj /= np.sum(p_adj, axis=1, keepdims=True)
 
 decoder = ViterbiSequenceDecoder(
     trans_penalty_swap=TRANS_PENALTY_SWAP,
