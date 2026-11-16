@@ -64,9 +64,13 @@ class RTSBallSmoother:
         self.dt        = float(dt)
         self.game      = game
 
-        length, width = GAMES[game]["pitch"]
-        self._pitch_length = float(length)
-        self._pitch_width  = float(width)
+        pitch = GAMES.get(game, {}).get("pitch", (105.3, 68.0))
+        if isinstance(pitch, (tuple, list)):
+            self._pitch_length = float(pitch[0])
+            self._pitch_width  = float(pitch[1])
+        else:
+            self._pitch_length = 105.3
+            self._pitch_width  = 68.0
 
         # Build system matrices once
         self._F = self._build_F(dt)

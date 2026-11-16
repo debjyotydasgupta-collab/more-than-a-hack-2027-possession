@@ -296,7 +296,7 @@ class BallisticsEngine:
 
         return features, touch_info
 
-    def estimate_pseudo_3d_arc(self, ball_xy: np.ndarray, v_ball: np.ndarray, touch_info: dict = None) -> np.ndarray:
+    def estimate_pseudo_3d_arc(self, ball_xy: np.ndarray, v_ball: np.ndarray, touch_info: dict | None = None) -> np.ndarray:
         """
         Phase 2: Estimate pseudo-3D ballistic arc height z(t) for lofted passes and clearances
         by kinematic parabolic arc reconstruction.
@@ -320,12 +320,12 @@ class BallisticsEngine:
         dt = self.dt
 
         # Ensure ball coordinates are linearly interpolated across tracking gaps
-        bx = pd.Series(ball_xy[:, 0]).interpolate(method="linear").bfill().ffill().values
-        by = pd.Series(ball_xy[:, 1]).interpolate(method="linear").bfill().ffill().values
+        bx = np.asarray(pd.Series(ball_xy[:, 0]).interpolate(method="linear").bfill().ffill().values, dtype=np.float64)
+        by = np.asarray(pd.Series(ball_xy[:, 1]).interpolate(method="linear").bfill().ffill().values, dtype=np.float64)
 
         # Clean velocity
-        vx = np.diff(bx, prepend=bx[0]) / dt
-        vy = np.diff(by, prepend=by[0]) / dt
+        vx = np.diff(bx, 1, prepend=bx[0]) / dt
+        vy = np.diff(by, 1, prepend=by[0]) / dt
         vb = np.sqrt(vx**2 + vy**2)
 
         # Identify ballistic flight candidate intervals (sustained motion >= 3.0 m/s)

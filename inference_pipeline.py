@@ -179,6 +179,15 @@ H_mask = (team_of_track == 0)
 A_mask = (team_of_track == 1)
 bx = frames_m[:, 46, 0]
 by = frames_m[:, 46, 1]
+
+# Kinematic ball velocity for release, flight, and stoppage detection
+vb_xy = np.zeros((N_FRAMES, 2), dtype=np.float64)
+valid_b = ~np.isnan(bx) & ~np.isnan(by)
+vb_xy[1:] = np.diff(np.stack([bx, by], axis=1), axis=0) / 0.04
+vb_xy[~valid_b] = 0.0
+vb_xy[1:][~valid_b[:-1]] = 0.0
+v_ball = np.linalg.norm(vb_xy, axis=1)
+
 players_m = frames_m[:, :46, :]
 players_xy = frames_m[:, :46, :2]
 
@@ -320,14 +329,6 @@ if events:
     ball_x_coords = frames_m[:, 46, 0]
     ball_y_coords = frames_m[:, 46, 1]
     dist_touch = np.minimum(ball_y_coords, PITCH_WIDTH - ball_y_coords)
-
-    # Kinematic ball velocity for release detection
-    vb_xy = np.zeros((N_FRAMES, 2), dtype=np.float64)
-    valid_b = ~np.isnan(ball_x_coords) & ~np.isnan(ball_y_coords)
-    vb_xy[1:] = np.diff(np.stack([ball_x_coords, ball_y_coords], axis=1), axis=0) / 0.04
-    vb_xy[~valid_b] = 0.0
-    vb_xy[1:][~valid_b[:-1]] = 0.0
-    v_ball = np.linalg.norm(vb_xy, axis=1)
 
     for sp in [e for e in events if e.get("code") == "SET PIECES"]:
         sf = max(0, sp["start_frame"])

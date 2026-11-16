@@ -83,6 +83,8 @@ class HierarchicalPossessionEngine:
         Compute joint (N, 4) probability distribution: [P(H), P(A), P(D), P(X)].
         """
         N = len(X_all)
+        if self.model_state is None or self.model_owner is None:
+            raise RuntimeError("Models must be fitted before predict_proba.")
         p_live = self.model_state.predict_proba(X_all)[:, 1] # P(Alive)
         p_dead = 1.0 - p_live
 

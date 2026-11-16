@@ -66,7 +66,7 @@ class BoundaryImpulseSnapper:
 
     def snap_boundaries(self, labels: np.ndarray, ball_xy: np.ndarray, 
                         players_xy: np.ndarray, team_of_track: np.ndarray,
-                        llr: np.ndarray = None) -> np.ndarray:
+                        llr: np.ndarray | None = None) -> np.ndarray:
         """
         Snap transition boundaries in `labels` to exact physical impulse events and CUSUM MLE changepoints.
 

@@ -123,6 +123,8 @@ class ViterbiSequenceDecoder:
         viterbi[0] = log_emissions[0]
 
         has_dynamic = (dH is not None and dA is not None)
+        T_HA = np.empty(0, dtype=np.float64)
+        T_AH = np.empty(0, dtype=np.float64)
         if has_dynamic:
             # Precompute proximity-adaptive turnover barriers:
             # T_t(H -> A) = -2.5 * sigmoid((dA - 1.5)/0.5)

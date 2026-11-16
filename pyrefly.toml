@@ -1,0 +1,23 @@
+python-interpreter-path = "C:\\Program Files\\FreeCAD 1.0\\bin\\python.exe"
+site-packages-path = [
+    "C:\\Program Files\\FreeCAD 1.0\\bin\\Lib\\site-packages",
+    "C:\\Users\\DEBJYOTY DASGUPTA\\AppData\\Roaming\\Python\\Python311\\site-packages"
+]
+search-path = [
+    ".",
+    "mtah2027_possession",
+    "mtah2027_possession/src",
+    "starter",
+    "evaluation"
+]
+ignore-missing-imports = ["*"]
+project-includes = [
+    "inference_pipeline.py",
+    "submit.py",
+    "mtah2027_possession/**/*.py"
+]
+project-excludes = [
+    "scratch/**",
+    "evaluation/**",
+    "starter/**/*.ipynb"
+]

@@ -13,6 +13,7 @@ Directly implements Layer 1 of the architecture described in `ball_possession_ma
 
 import os
 import pickle
+from typing import Any
 import numpy as np
 
 # Robust import check for LightGBM
@@ -286,7 +287,7 @@ class PossessionGBDT:
             }
             default_params.update(self.params)
             self.model = lgb.LGBMClassifier(**default_params)
-            fit_kwargs = {"sample_weight": sample_weight}
+            fit_kwargs: dict[str, Any] = {"sample_weight": sample_weight}
             if eval_set is not None:
                 eval_set_encoded = [(np.asarray(ex), encode_labels(ey)) for ex, ey in eval_set]
                 fit_kwargs["eval_set"] = eval_set_encoded
@@ -305,11 +306,11 @@ class PossessionGBDT:
             }
             default_params.update(self.params)
             self.model = cb.CatBoostClassifier(**default_params)
-            fit_kwargs = {"sample_weight": sample_weight}
+            fit_kwargs_cb: dict[str, Any] = {"sample_weight": sample_weight}
             if eval_set is not None:
                 eval_set_encoded = [(np.asarray(ex), encode_labels(ey)) for ex, ey in eval_set]
-                fit_kwargs["eval_set"] = eval_set_encoded[0]
-            self.model.fit(X, y, **fit_kwargs)
+                fit_kwargs_cb["eval_set"] = eval_set_encoded[0]
+            self.model.fit(X, y, **fit_kwargs_cb)
 
         # Backend 3: Fallback Spatial Classifier
         else:
